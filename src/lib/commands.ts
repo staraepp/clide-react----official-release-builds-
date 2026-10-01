@@ -12,6 +12,7 @@ import type {
   PermissionStatus,
   FallbackPolicy,
   RefineStyle,
+  TechnicalVocabulary,
   RefinerDescriptor,
   ModelsPage,
   Usage,
@@ -164,3 +165,9 @@ export const setRefineEngineEnabled = (engineId: string, enabled: boolean) =>
 /** Spoken "comma" and "new line" become punctuation. Applies in every mode. */
 export const setSpokenPunctuation = (enabled: boolean) =>
   invoke<void>("set_spoken_punctuation", { enabled });
+
+export const setTechnicalVocabulary = (setting: TechnicalVocabulary) =>
+  invoke<void>("set_technical_vocabulary", { setting });
+
+export const setFormatTechnicalTerms = (enabled: boolean) =>
+  invoke<void>("set_format_technical_terms", { enabled });

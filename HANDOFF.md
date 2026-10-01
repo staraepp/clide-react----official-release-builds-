@@ -57,11 +57,23 @@ Verified: `cargo test` 202 passed, clippy clean, `tsc` + `vite build` clean.
 Not verified: a spoken run on real hardware, and the refiner's behaviour on
 real restarts (needs Apple Intelligence).
 
-**Phase 3: technical context.** New `context/` module. Vocabulary priming via
-`TranscriptionRequest.prompt` (pipeline.rs hardcodes `None` today; only local
-Whisper has `prompting`). Code-span formatting of spoken paths is an opt-in
-setting, default OFF: backticks typed into a terminal are shell command
-substitution.
+**Phase 3 (done): technical context.** New `context/` module: bundle-id
+allowlist (editors, terminals, agent apps, browsers) plus
+`TECHNICAL_VOCABULARY`, and `vocabulary_prompt()` which feeds
+`TranscriptionRequest.prompt` in `dictation/pipeline.rs::transcribe()`. Setting
+`technicalVocabulary`: auto (dev apps and browsers) / always / off. **Only local
+Whisper has `prompting`**, so on Apple Speech or Parakeet this is a no-op and
+Settings says so (`SystemStatus.providerPrompting`). Opt-in setting
+`formatTechnicalTerms` (default OFF) runs `processing/techformat.rs` after
+backtrack and before Polish: "src slash app dot tsx" -> `` `src/app.tsx` ``, and
+filenames/paths are wrapped in backticks. It is off by default because backticks
+are literal characters (shell command substitution in a terminal). Polish was
+also fixed so `app.tsx` is no longer recapitalised to `app.Tsx` and code spans
+are never recapitalised; Rewrite is told to copy backtick text exactly.
+No per-app profiles yet — one global setting. Verified: `cargo test` 221
+passed, clippy clean, `tsc` + `vite build` clean, Settings section rendered in
+a browser against a mocked backend. Not verified: real dictation into a
+terminal/editor/browser, and Whisper actually honouring the glossary prompt.
 
 ---
 

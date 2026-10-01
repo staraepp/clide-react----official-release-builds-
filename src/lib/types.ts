@@ -50,11 +50,15 @@ export type FallbackPolicy = "off" | "localOnly";
 
 export type RefineStyle = "tidy" | "written";
 
+export type TechnicalVocabulary = "auto" | "always" | "off";
+
 export interface AppSettings {
   fallback: FallbackPolicy;
   refineStyle: RefineStyle;
   refineEngines: string[];
   spokenPunctuation: boolean;
+  technicalVocabulary: TechnicalVocabulary;
+  formatTechnicalTerms: boolean;
   shortcut: string;
   behavior: DictationBehavior;
   mode: ProcessingMode;
@@ -74,6 +78,8 @@ export interface SystemStatus {
   modelName: string;
   /** The selected engine can run the selected model right now. */
   providerReady: boolean;
+  /** The selected engine can take a vocabulary hint (local Whisper). */
+  providerPrompting: boolean;
   adHocBuild: boolean;
   ready: boolean;
 }

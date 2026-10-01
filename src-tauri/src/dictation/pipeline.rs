@@ -246,13 +246,14 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
-    let (provider_id, model_id, language, policy) = {
+    let (provider_id, model_id, language, policy, vocabulary) = {
         let settings = state.settings();
         (
             settings.provider_id,
             settings.model_id,
             settings.language,
             settings.fallback,
+            settings.technical_vocabulary,
         )
     };
 
@@ -265,11 +266,21 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
+    let target = state.session.target();
+    let prompt = crate::context::vocabulary_prompt(
+        vocabulary,
+        &target,
+        provider.capabilities().prompting,
+    );
+    if prompt.is_some() {
+        tracing::info!(app = target.label(), "technical vocabulary applied");
+    }
+
     let request = TranscriptionRequest {
         audio: AudioClip::wav(pending.path, pending.duration_secs),
         model: model_id,
         language,
-        prompt: None,
+        prompt: prompt.map(str::to_string),
     };
 
     let first_attempt = provider.transcribe(request.clone()).await;
@@ -337,13 +348,14 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
     events::emit_state(app, &next);
     events::emit_bare(app, events::PROCESSING_STARTED);
 
-    let (mode, style, engines, spoken) = {
+    let (mode, style, engines, spoken, format_technical) = {
         let settings = state.settings();
         (
             settings.mode,
             settings.refine_style,
             settings.refine_engines,
             settings.spoken_punctuation,
+            settings.format_technical_terms,
         )
     };
 
@@ -374,7 +386,13 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
         return None;
     }
 
-    let raw = corrected.text;
+    // Opt-in: spoken paths become code spans before Polish, which knows to
+    // leave them alone, and before Rewrite, which is told to copy them.
+    let raw = if format_technical {
+        processing::techformat::format_technical(&corrected.text)
+    } else {
+        corrected.text
+    };
 
     match processing::process(mode, &raw, spoken) {
         Ok(text) => {

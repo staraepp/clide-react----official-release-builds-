@@ -30,6 +30,9 @@ pub struct SystemStatus {
     /// Whether the selected engine can run the selected model right now. False
     /// when the chosen local model has not been downloaded.
     pub provider_ready: bool,
+    /// The selected engine accepts a vocabulary hint, so technical vocabulary
+    /// can actually take effect.
+    pub provider_prompting: bool,
     /// True when this build is ad-hoc signed, which makes macOS drop the
     /// Accessibility grant on every rebuild even though System Settings still
     /// shows the switch on. Lets the UI explain the contradiction.
@@ -62,6 +65,10 @@ pub fn get_system_status(app: AppHandle) -> SystemStatus {
         .providers
         .get(&settings.provider_id)
         .is_some_and(|provider| provider.has_model(&settings.model_id));
+    let provider_prompting = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().prompting);
     let shortcut_registered = registered_shortcut.is_some();
 
     SystemStatus {
@@ -76,6 +83,7 @@ pub fn get_system_status(app: AppHandle) -> SystemStatus {
         provider_name,
         model_name,
         provider_ready,
+        provider_prompting,
         ad_hoc_build: crate::permissions::is_ad_hoc(),
     }
 }
@@ -236,6 +244,30 @@ mod readiness_tests {
         let provider = registry.default_provider();
         assert!(provider.has_model(provider.default_model()));
     }
+}
+
+/// Choose when developer vocabulary primes the speech engine.
+#[tauri::command]
+pub fn set_technical_vocabulary(
+    app: AppHandle,
+    setting: crate::context::TechnicalVocabulary,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.technical_vocabulary = setting)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Turn code formatting of spoken file paths on or off.
+///
+/// Off by default: the backticks are literal characters, and typed into a
+/// terminal they are shell command substitution.
+#[tauri::command]
+pub fn set_format_technical_terms(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.format_technical_terms = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
 }
 
 /// Switch a refinement engine on or off.

@@ -113,6 +113,59 @@ export function SettingsView({
       </Section>
 
       <Section
+        title="Developer dictation"
+        description="Helps clide hear technical words in editors, terminals and browsers, and can write spoken file paths as code."
+      >
+        <div className="flex flex-col gap-4">
+          <Segmented
+            className="w-full"
+            value={status.settings.technicalVocabulary}
+            onChange={async (setting) => {
+              await commands.setTechnicalVocabulary(setting);
+              refresh();
+            }}
+            segments={[
+              { value: "auto", label: "Dev apps", hint: "Editors, terminals and browsers" },
+              { value: "always", label: "Everywhere", hint: "Every app" },
+              { value: "off", label: "Off", hint: "Never" },
+            ]}
+          />
+          {status.settings.technicalVocabulary !== "off" &&
+            !status.providerPrompting && (
+              <p className="text-[12px] leading-relaxed text-warn">
+                {status.providerName} can't take vocabulary hints. Switch to a
+                Whisper model on the Models page and this takes effect.
+              </p>
+            )}
+
+          <label className="flex items-start gap-3">
+            <Toggle
+              checked={status.settings.formatTechnicalTerms}
+              label="Write spoken file paths as code"
+              onChange={async (next) => {
+                await commands.setFormatTechnicalTerms(next);
+                refresh();
+              }}
+            />
+            <span className="text-[13px] leading-snug text-ink">
+              Write spoken file paths as code
+              <span className="mt-1 block text-[12px] text-ink-3">
+                &ldquo;open src slash app dot tsx&rdquo; becomes{" "}
+                <code className="font-mono">`src/app.tsx`</code>.
+              </span>
+            </span>
+          </label>
+          {status.settings.formatTechnicalTerms && (
+            <p className="text-[12px] leading-relaxed text-warn">
+              The backticks are typed as real characters. Leave this off for
+              terminals and code editors, where they would break a command or
+              clutter your source.
+            </p>
+          )}
+        </div>
+      </Section>
+
+      <Section
         title="Rewrite"
         description="Rewrite mode cleans the transcript locally, then asks an on-device model to finish the job. Nothing is sent anywhere."
       >

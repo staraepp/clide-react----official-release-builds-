@@ -216,19 +216,40 @@ fn space_after_punctuation(line: &str) -> String {
 
 /// Capitalise the first word, anything after sentence-ending punctuation, and
 /// the standalone pronoun "i".
+///
+/// Two things are deliberately left alone. Text inside backticks is code, so
+/// `src/app.tsx` must not become `Src/app.tsx`. And a full stop only ends a
+/// sentence when whitespace (or nothing) follows it — "app.tsx" is a filename,
+/// not "app." then "Tsx".
 fn capitalize_sentences(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut expect_capital = true;
+    let mut in_code = false;
 
     let chars: Vec<char> = line.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
+        if c == '`' {
+            in_code = !in_code;
+            // A code span can open a sentence; it uses up the capital.
+            expect_capital = false;
+            out.push(c);
+            continue;
+        }
+
+        if in_code {
+            out.push(c);
+            continue;
+        }
+
         if expect_capital && c.is_alphabetic() {
             out.extend(c.to_uppercase());
             expect_capital = false;
             continue;
         }
 
-        if matches!(c, '.' | '!' | '?') {
+        if matches!(c, '.' | '!' | '?')
+            && chars.get(i + 1).map_or(true, |next| next.is_whitespace())
+        {
             expect_capital = true;
         }
 
@@ -284,6 +305,17 @@ mod phrase_repeat_tests {
     #[test]
     fn repeats_across_a_sentence_boundary_are_emphasis_not_a_restart() {
         assert_eq!(polished("It works. It works."), "It works. It works.");
+    }
+
+    #[test]
+    fn a_filename_keeps_its_extension_lowercase() {
+        assert_eq!(polished("open app.tsx and commands.ts."), "Open app.tsx and commands.ts.");
+    }
+
+    #[test]
+    fn code_spans_are_not_recapitalised() {
+        assert_eq!(polished("`src/app.tsx` is broken"), "`src/app.tsx` is broken");
+        assert_eq!(polished("see `a.b`. then go"), "See `a.b`. Then go");
     }
 
     #[test]

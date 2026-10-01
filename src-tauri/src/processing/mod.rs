@@ -8,6 +8,7 @@
 pub mod backtrack;
 pub mod polish;
 pub mod spoken;
+pub mod techformat;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

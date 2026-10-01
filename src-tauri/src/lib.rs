@@ -6,6 +6,7 @@
 
 pub mod audio;
 pub mod commands;
+pub mod context;
 pub mod database;
 pub mod dictation;
 pub mod hud;
@@ -107,6 +108,8 @@ pub fn run() {
             commands::settings::list_refiners,
             commands::settings::set_refine_engine_enabled,
             commands::settings::set_spoken_punctuation,
+            commands::settings::set_technical_vocabulary,
+            commands::settings::set_format_technical_terms,
             commands::settings::set_refine_style,
             commands::settings::get_about,
             commands::settings::set_language,

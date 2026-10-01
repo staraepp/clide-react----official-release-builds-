@@ -6,6 +6,7 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use crate::context::TechnicalVocabulary;
 use crate::dictation::fallback::FallbackPolicy;
 use crate::refine::RefineStyle;
 
@@ -47,6 +48,8 @@ mod keys {
     pub const REFINE_STYLE: &str = "processing.refine_style";
     pub const SPOKEN: &str = "processing.spoken_punctuation";
     pub const REFINE_ENGINES: &str = "processing.refine_engines";
+    pub const TECHNICAL_VOCABULARY: &str = "dictation.technical_vocabulary";
+    pub const FORMAT_TECHNICAL: &str = "processing.format_technical";
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,6 +76,12 @@ pub struct AppSettings {
     /// they should be tried. Empty means Rewrite falls back to the polished
     /// transcript — never that clide picks an engine on their behalf.
     pub refine_engines: Vec<String>,
+    /// Prime the engine with developer vocabulary. Only takes effect on
+    /// engines that accept a hint (local Whisper).
+    pub technical_vocabulary: TechnicalVocabulary,
+    /// Wrap spoken file paths in backticks. Off by default: backticks are
+    /// literal text, and harmful in a terminal.
+    pub format_technical_terms: bool,
     pub onboarding_complete: bool,
 }
 
@@ -91,6 +100,8 @@ impl AppSettings {
             refine_style: RefineStyle::default(),
             spoken_punctuation: true,
             refine_engines: vec!["apple-intelligence".to_string()],
+            technical_vocabulary: TechnicalVocabulary::default(),
+            format_technical_terms: false,
             onboarding_complete: false,
         }
     }
@@ -143,6 +154,14 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
             .ok()
             .flatten()
             .unwrap_or(defaults.refine_engines),
+        technical_vocabulary: kv::get(connection, keys::TECHNICAL_VOCABULARY)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.technical_vocabulary),
+        format_technical_terms: kv::get(connection, keys::FORMAT_TECHNICAL)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.format_technical_terms),
         visual_intensity: kv::get(connection, keys::INTENSITY)
             .ok()
             .flatten()
@@ -195,6 +214,16 @@ pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result
     kv::set(connection, keys::REFINE_STYLE, &settings.refine_style)?;
     kv::set(connection, keys::SPOKEN, &settings.spoken_punctuation)?;
     kv::set(connection, keys::REFINE_ENGINES, &settings.refine_engines)?;
+    kv::set(
+        connection,
+        keys::TECHNICAL_VOCABULARY,
+        &settings.technical_vocabulary,
+    )?;
+    kv::set(
+        connection,
+        keys::FORMAT_TECHNICAL,
+        &settings.format_technical_terms,
+    )?;
     kv::set(connection, keys::ONBOARDING, &settings.onboarding_complete)?;
     Ok(())
 }
@@ -270,6 +299,24 @@ mod tests {
             ProcessingMode::Polished,
             "no fallback applied"
         );
+    }
+
+    /// Code formatting inserts literal backticks, so it must never switch
+    /// itself on.
+    #[test]
+    fn technical_formatting_is_off_by_default_and_persists() {
+        let db = Database::in_memory().unwrap();
+        let mut settings = load(&db.lock(), "apple", "apple-speech");
+        assert!(!settings.format_technical_terms);
+        assert_eq!(settings.technical_vocabulary, TechnicalVocabulary::Auto);
+
+        settings.format_technical_terms = true;
+        settings.technical_vocabulary = TechnicalVocabulary::Always;
+        save(&db.lock(), &settings).unwrap();
+
+        let reloaded = load(&db.lock(), "apple", "apple-speech");
+        assert!(reloaded.format_technical_terms);
+        assert_eq!(reloaded.technical_vocabulary, TechnicalVocabulary::Always);
     }
 
     #[test]
