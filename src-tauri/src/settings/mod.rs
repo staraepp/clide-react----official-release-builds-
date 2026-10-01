@@ -48,6 +48,7 @@ mod keys {
     pub const REFINE_STYLE: &str = "processing.refine_style";
     pub const SPOKEN: &str = "processing.spoken_punctuation";
     pub const REFINE_ENGINES: &str = "processing.refine_engines";
+    pub const REFINE_MODEL: &str = "processing.refine_model";
     pub const TECHNICAL_VOCABULARY: &str = "dictation.technical_vocabulary";
     pub const FORMAT_TECHNICAL: &str = "processing.format_technical";
 }
@@ -76,6 +77,9 @@ pub struct AppSettings {
     /// they should be tried. Empty means Rewrite falls back to the polished
     /// transcript — never that clide picks an engine on their behalf.
     pub refine_engines: Vec<String>,
+    /// The model Rewrite should use on engines that offer a choice (Ollama).
+    /// `None` lets the engine pick the best one installed.
+    pub refine_model: Option<String>,
     /// Prime the engine with developer vocabulary. Only takes effect on
     /// engines that accept a hint (local Whisper).
     pub technical_vocabulary: TechnicalVocabulary,
@@ -100,6 +104,7 @@ impl AppSettings {
             refine_style: RefineStyle::default(),
             spoken_punctuation: true,
             refine_engines: vec!["apple-intelligence".to_string()],
+            refine_model: None,
             technical_vocabulary: TechnicalVocabulary::default(),
             format_technical_terms: false,
             onboarding_complete: false,
@@ -154,6 +159,10 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
             .ok()
             .flatten()
             .unwrap_or(defaults.refine_engines),
+        refine_model: kv::get::<Option<String>>(connection, keys::REFINE_MODEL)
+            .ok()
+            .flatten()
+            .flatten(),
         technical_vocabulary: kv::get(connection, keys::TECHNICAL_VOCABULARY)
             .ok()
             .flatten()
@@ -214,6 +223,7 @@ pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result
     kv::set(connection, keys::REFINE_STYLE, &settings.refine_style)?;
     kv::set(connection, keys::SPOKEN, &settings.spoken_punctuation)?;
     kv::set(connection, keys::REFINE_ENGINES, &settings.refine_engines)?;
+    kv::set(connection, keys::REFINE_MODEL, &settings.refine_model)?;
     kv::set(
         connection,
         keys::TECHNICAL_VOCABULARY,

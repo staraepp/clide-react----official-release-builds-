@@ -246,6 +246,16 @@ mod readiness_tests {
     }
 }
 
+/// Choose the model Rewrite uses on engines that offer a choice. `None` lets
+/// the engine pick the best installed one.
+#[tauri::command]
+pub fn set_refine_model(app: AppHandle, model: Option<String>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.refine_model = model)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
 /// Choose when developer vocabulary primes the speech engine.
 #[tauri::command]
 pub fn set_technical_vocabulary(

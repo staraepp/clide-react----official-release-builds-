@@ -74,6 +74,10 @@ Node.js, npm, pnpm, Git, GitHub, pull request, commit, branch, merge, rebase, lo
 API, JSON, YAML, Docker, kubectl, regex, async, await, stdout, CLI, MCP, Claude Code, Tauri, \
 Rust, Cargo, Vite, Tailwind, Vitest, Playwright, tsconfig, package.json, README.";
 
+/// Names Clide is asked to write in every app, whatever the setting: priming
+/// them is what stops "Clide" arriving as "Clyde".
+pub const KNOWN_NAMES: &str = "Names: Clide, Claude Code.";
+
 pub fn is_technical_app(target: &FocusTarget) -> bool {
     if let Some(bundle) = target.bundle_id.as_deref() {
         if TECHNICAL_BUNDLES.contains(&bundle)
@@ -101,16 +105,23 @@ pub fn vocabulary_prompt(
     setting: TechnicalVocabulary,
     target: &FocusTarget,
     engine_accepts_prompts: bool,
-) -> Option<&'static str> {
-    if !engine_accepts_prompts || target.is_clide() {
+) -> Option<String> {
+    if !engine_accepts_prompts {
         return None;
     }
 
-    match setting {
-        TechnicalVocabulary::Off => None,
-        TechnicalVocabulary::Always => Some(TECHNICAL_VOCABULARY),
-        TechnicalVocabulary::Auto => is_technical_app(target).then_some(TECHNICAL_VOCABULARY),
-    }
+    let technical = !target.is_clide()
+        && match setting {
+            TechnicalVocabulary::Off => false,
+            TechnicalVocabulary::Always => true,
+            TechnicalVocabulary::Auto => is_technical_app(target),
+        };
+
+    Some(if technical {
+        format!("{KNOWN_NAMES} {TECHNICAL_VOCABULARY}")
+    } else {
+        KNOWN_NAMES.to_string()
+    })
 }
 
 #[cfg(test)]
@@ -155,22 +166,41 @@ mod tests {
         assert!(!is_technical_app(&FocusTarget::default()));
     }
 
-    #[test]
-    fn auto_only_primes_technical_apps() {
-        let terminal = app("Terminal", "com.apple.Terminal");
-        let notes = app("Notes", "com.apple.Notes");
-
-        assert!(vocabulary_prompt(TechnicalVocabulary::Auto, &terminal, true).is_some());
-        assert!(vocabulary_prompt(TechnicalVocabulary::Auto, &notes, true).is_none());
+    fn primes_glossary(setting: TechnicalVocabulary, target: &FocusTarget) -> bool {
+        vocabulary_prompt(setting, target, true)
+            .is_some_and(|prompt| prompt.contains(TECHNICAL_VOCABULARY))
     }
 
     #[test]
-    fn always_primes_every_app_and_off_primes_none() {
+    fn auto_only_adds_the_glossary_in_technical_apps() {
+        let terminal = app("Terminal", "com.apple.Terminal");
+        let notes = app("Notes", "com.apple.Notes");
+
+        assert!(primes_glossary(TechnicalVocabulary::Auto, &terminal));
+        assert!(!primes_glossary(TechnicalVocabulary::Auto, &notes));
+    }
+
+    #[test]
+    fn always_adds_the_glossary_everywhere_and_off_never_does() {
         let notes = app("Notes", "com.apple.Notes");
         let terminal = app("Terminal", "com.apple.Terminal");
 
-        assert!(vocabulary_prompt(TechnicalVocabulary::Always, &notes, true).is_some());
-        assert!(vocabulary_prompt(TechnicalVocabulary::Off, &terminal, true).is_none());
+        assert!(primes_glossary(TechnicalVocabulary::Always, &notes));
+        assert!(!primes_glossary(TechnicalVocabulary::Off, &terminal));
+    }
+
+    /// The product name is primed whatever the technical setting says.
+    #[test]
+    fn the_product_name_is_always_primed() {
+        let notes = app("Notes", "com.apple.Notes");
+        for setting in [
+            TechnicalVocabulary::Auto,
+            TechnicalVocabulary::Always,
+            TechnicalVocabulary::Off,
+        ] {
+            let prompt = vocabulary_prompt(setting, &notes, true).unwrap();
+            assert!(prompt.contains("Clide"), "{setting:?}");
+        }
     }
 
     #[test]
@@ -180,8 +210,8 @@ mod tests {
     }
 
     #[test]
-    fn clide_itself_is_never_primed() {
+    fn clide_itself_never_gets_the_glossary() {
         let clide = app("clide", "com.staraep.clide");
-        assert!(vocabulary_prompt(TechnicalVocabulary::Always, &clide, true).is_none());
+        assert!(!primes_glossary(TechnicalVocabulary::Always, &clide));
     }
 }

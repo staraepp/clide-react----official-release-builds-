@@ -56,6 +56,7 @@ export interface AppSettings {
   fallback: FallbackPolicy;
   refineStyle: RefineStyle;
   refineEngines: string[];
+  refineModel: string | null;
   spokenPunctuation: boolean;
   technicalVocabulary: TechnicalVocabulary;
   formatTechnicalTerms: boolean;
@@ -262,6 +263,8 @@ export interface RefinerDescriptor {
   local: boolean;
   available: boolean;
   unavailableReason: string | null;
+  /** Models the user can choose between. Empty when the engine has one. */
+  models: string[];
 }
 
 /** Who this build is, and where to go with it. */

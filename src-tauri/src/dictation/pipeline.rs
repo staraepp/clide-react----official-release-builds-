@@ -280,7 +280,7 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         audio: AudioClip::wav(pending.path, pending.duration_secs),
         model: model_id,
         language,
-        prompt: prompt.map(str::to_string),
+        prompt,
     };
 
     let first_attempt = provider.transcribe(request.clone()).await;
@@ -348,7 +348,7 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
     events::emit_state(app, &next);
     events::emit_bare(app, events::PROCESSING_STARTED);
 
-    let (mode, style, engines, spoken, format_technical) = {
+    let (mode, style, engines, spoken, format_technical, refine_model) = {
         let settings = state.settings();
         (
             settings.mode,
@@ -356,6 +356,7 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
             settings.refine_engines,
             settings.spoken_punctuation,
             settings.format_technical_terms,
+            settings.refine_model,
         )
     };
 
@@ -386,18 +387,22 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
         return None;
     }
 
+    // Spelling of the names Clide is asked to write most. Always on: it needs
+    // no model and is the same in every mode.
+    let corrected_text = processing::names::apply_known_names(&corrected.text);
+
     // Opt-in: spoken paths become code spans before Polish, which knows to
     // leave them alone, and before Rewrite, which is told to copy them.
     let raw = if format_technical {
-        processing::techformat::format_technical(&corrected.text)
+        processing::techformat::format_technical(&corrected_text)
     } else {
-        corrected.text
+        corrected_text
     };
 
     match processing::process(mode, &raw, spoken) {
         Ok(text) => {
             let text = if mode == processing::ProcessingMode::Rewrite {
-                refine_text(app, text, style, &engines).await
+                refine_text(app, text, style, &engines, refine_model).await
             } else {
                 text
             };
@@ -438,8 +443,17 @@ async fn refine_text(
     text: String,
     style: RefineStyle,
     engines: &[String],
+    model: Option<String>,
 ) -> String {
     let state = app.state::<AppState>();
+
+    // Only the app's name, and never Clide itself: context level 1.
+    let target = state.session.target();
+    let app_name = if target.is_clide() {
+        None
+    } else {
+        target.app_name.clone()
+    };
 
     let Some(refiner) = state.refiners.first_enabled(engines) else {
         tracing::debug!("rewrite requested but no enabled refinement engine can run");
@@ -450,6 +464,8 @@ async fn refine_text(
         .refine(RefineRequest {
             text: text.clone(),
             style,
+            model,
+            app: app_name,
         })
         .await
     {

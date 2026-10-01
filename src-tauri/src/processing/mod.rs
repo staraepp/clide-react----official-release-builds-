@@ -6,6 +6,7 @@
 //! dictation code.
 
 pub mod backtrack;
+pub mod names;
 pub mod polish;
 pub mod spoken;
 pub mod techformat;

@@ -169,5 +169,8 @@ export const setSpokenPunctuation = (enabled: boolean) =>
 export const setTechnicalVocabulary = (setting: TechnicalVocabulary) =>
   invoke<void>("set_technical_vocabulary", { setting });
 
+export const setRefineModel = (model: string | null) =>
+  invoke<void>("set_refine_model", { model });
+
 export const setFormatTechnicalTerms = (enabled: boolean) =>
   invoke<void>("set_format_technical_terms", { enabled });

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use super::apple_intelligence::AppleIntelligenceRefiner;
+use super::ollama::OllamaRefiner;
 use super::traits::{Refiner, RefinerDescriptor};
 
 pub struct RefinerRegistry {
@@ -15,7 +16,10 @@ impl RefinerRegistry {
             // Order is the fallback order. Spoken punctuation is *not* here —
             // it is a pre-pass, applied before any of these, so enabling it
             // can never stop a rewrite from happening.
-            refiners: vec![Arc::new(AppleIntelligenceRefiner::new())],
+            refiners: vec![
+                Arc::new(AppleIntelligenceRefiner::new()),
+                Arc::new(OllamaRefiner::new()),
+            ],
         }
     }
 

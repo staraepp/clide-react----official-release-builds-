@@ -75,6 +75,23 @@ passed, clippy clean, `tsc` + `vite build` clean, Settings section rendered in
 a browser against a mocked backend. Not verified: real dictation into a
 terminal/editor/browser, and Whisper actually honouring the glossary prompt.
 
+**Update (2026-10-01, later): quality pass.** Whisper context is now cached
+across dictations (`providers/local/whisper.rs`, was ~10 s reload per run).
+`processing/names.rs` always rewrites Clyde/cladcode-style variants to Clide /
+Claude Code (a real "Clyde" is rewritten too, on purpose). The Whisper prompt
+always carries "Names: Clide, Claude Code." New refiner `refine/ollama.rs`
+talks to a local Ollama on 127.0.0.1:11434 (the only non-model/non-update
+network traffic allowed, loopback only); model is a setting (`refineModel`,
+automatic = best installed, qwen3 instruct preferred). Rewrite instructions
+fix small grammar and software-term mishearings only in software talk.
+Measured on this Mac: qwen3:4b-instruct and gemma4:e4b both fail to repair
+"signing this up" -> "signing this app" reliably, and the 4B model false-fires
+on non-software sentences, so that example was deliberately NOT shipped.
+"Clide Local" (~/Applications) is a separate Swift app (FluidAudio Parakeet TDT
+v3 on CoreML + qwen3:4b cleanup via Ollama) — not this codebase.
+Release builds here need `CARGO_PROFILE_RELEASE_STRIP=none`: stripped proc-macro
+dylibs fail to dlopen on macOS 26.
+
 ---
 
 # START HERE

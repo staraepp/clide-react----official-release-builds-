@@ -105,6 +105,27 @@ export function RefineSection({
                 {refiner.available ? refiner.description : refiner.unavailableReason}
               </p>
 
+              {refiner.models.length > 0 && enabled && (
+                <label className="flex flex-col gap-1 text-[11px] text-ink-3">
+                  Model
+                  <select
+                    className="rounded-ctl border border-line bg-card px-2 py-1.5 text-[12.5px] text-ink"
+                    value={status.settings.refineModel ?? ""}
+                    onChange={async (event) => {
+                      await commands.setRefineModel(event.target.value || null);
+                      refresh();
+                    }}
+                  >
+                    <option value="">Best installed (automatic)</option>
+                    {refiner.models.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <span className="mt-auto flex items-center gap-1.5">
                 <StatusDot
                   tone={!refiner.available ? "problem" : enabled ? "ready" : "idle"}
