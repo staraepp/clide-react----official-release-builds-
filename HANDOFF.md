@@ -42,11 +42,20 @@ dashboard / Settings / Models rendered in a browser against a mocked backend.
 **Not verified:** the packaged app and a real dictation after the change.
 `credentials.json` from older installs is left on disk, unused.
 
-**Phase 2 (next): backtrack.** `processing/backtrack.rs` runs first in
-`processing::process()` on the full transcript ("scratch that" removes back to
-the previous sentence boundary); phrase-level repeat collapse in `polish.rs`;
-self-correction instruction added to `RefineStyle`. Not live/streaming — the
-pipeline is one-shot by design.
+**Phase 2 (done): backtrack.** `processing/backtrack.rs` runs first in
+`dictation/pipeline.rs::process()` on the full raw transcript: "scratch that" /
+"strike that" delete back to the previous comma or sentence end; "scratch/
+delete/undo (the) last sentence" delete back to the previous sentence end. Each
+correction emits `dictation:correction-applied` and the HUD shows "corrected".
+Scratching everything cancels the dictation instead of inserting the raw text.
+`polish.rs::collapse_phrase_repeats` collapses an immediate 2-4 word repeat
+("I want it I want it to" -> "I want it to"); `RefineStyle` instructions now say
+to keep only the final version of a restart. Known limit: a sentence that
+really contains "scratch that" is treated as a command. Half-spoken words
+("t-") are NOT handled deterministically — that is the Rewrite model's job.
+Verified: `cargo test` 202 passed, clippy clean, `tsc` + `vite build` clean.
+Not verified: a spoken run on real hardware, and the refiner's behaviour on
+real restarts (needs Apple Intelligence).
 
 **Phase 3: technical context.** New `context/` module. Vocabulary priming via
 `TranscriptionRequest.prompt` (pipeline.rs hardcodes `None` today; only local

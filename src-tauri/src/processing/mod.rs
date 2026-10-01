@@ -5,6 +5,7 @@
 //! Rewrite later means adding a mode here, not threading an LLM through the
 //! dictation code.
 
+pub mod backtrack;
 pub mod polish;
 pub mod spoken;
 

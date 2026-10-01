@@ -29,6 +29,7 @@ export function Hud() {
   const state = useDictationState();
   const level = useMicLevel();
   const fellBack = useFallbackNotice(state);
+  const corrected = useCorrectionNotice(state);
   // The HUD never takes focus, so this only refetches when settings change —
   // which is the one thing that can alter how the chip should render.
   const { status } = useSystemStatus();
@@ -92,6 +93,12 @@ export function Hud() {
                   via {fellBack.usedProvider}
                 </span>
               )}
+
+              {corrected > 0 && (
+                <span className="whitespace-nowrap text-[11px] text-ink-3">
+                  {corrected === 1 ? "corrected" : `${corrected} corrections`}
+                </span>
+              )}
             </div>
 
             {failure && (
@@ -151,6 +158,31 @@ function useFallbackNotice(state: DictationState) {
   }, [state.kind]);
 
   return notice;
+}
+
+/**
+ * How many spoken corrections ("scratch that") shaped the current dictation.
+ *
+ * A correction removes words the user said, so it is announced rather than
+ * silent. Cleared when the next dictation starts.
+ */
+function useCorrectionNotice(state: DictationState) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const subscription = on(EVENTS.correctionApplied, (payload) =>
+      setCount(payload.count),
+    );
+    return () => {
+      subscription.then((unsubscribe) => unsubscribe());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (state.kind === "capturing") setCount(0);
+  }, [state.kind]);
+
+  return count;
 }
 
 /** The left-hand glyph: waveform, activity shimmer, tick, or warning. */

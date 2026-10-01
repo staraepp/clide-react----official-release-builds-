@@ -27,6 +27,9 @@ pub const TRANSCRIPTION_FAILED: &str = "transcription:failed";
 /// never silent — see `dictation::fallback`.
 pub const TRANSCRIPTION_FELL_BACK: &str = "transcription:fell-back";
 
+/// Emitted when spoken corrections ("scratch that") changed the transcript.
+pub const CORRECTION_APPLIED: &str = "dictation:correction-applied";
+
 pub const PROCESSING_STARTED: &str = "processing:started";
 pub const PROCESSING_COMPLETE: &str = "processing:complete";
 
@@ -82,6 +85,13 @@ pub fn emit<T: Serialize + Clone>(app: &AppHandle, name: &str, payload: T) {
 
 pub fn emit_bare(app: &AppHandle, name: &str) {
     emit(app, name, ());
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorrectionPayload {
+    /// How many "scratch that" style commands were applied.
+    pub count: usize,
 }
 
 #[derive(Clone, Serialize)]

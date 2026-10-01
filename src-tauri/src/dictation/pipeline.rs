@@ -347,6 +347,35 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
         )
     };
 
+    // Spoken corrections come first: a command phrase is never meant to be
+    // typed, and everything after this point should see the text the user
+    // actually meant.
+    let corrected = processing::backtrack::apply_backtracking(&raw);
+    if corrected.corrections > 0 {
+        tracing::info!(count = corrected.corrections, "spoken corrections applied");
+        events::emit(
+            app,
+            events::CORRECTION_APPLIED,
+            events::CorrectionPayload {
+                count: corrected.corrections,
+            },
+        );
+    }
+
+    // The user scratched everything they said. There is nothing to insert, and
+    // `processing::process` would helpfully resurrect the raw text, so stop
+    // here and treat it as a cancelled dictation.
+    if corrected.text.trim().is_empty() && corrected.corrections > 0 {
+        if let Ok(next) = state.session.apply(DictationInput::Cancel) {
+            events::emit_state(app, &next);
+        }
+        state.session.release_audio();
+        hud::hide(app);
+        return None;
+    }
+
+    let raw = corrected.text;
+
     match processing::process(mode, &raw, spoken) {
         Ok(text) => {
             let text = if mode == processing::ProcessingMode::Rewrite {

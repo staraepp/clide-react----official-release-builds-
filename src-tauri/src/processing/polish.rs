@@ -46,6 +46,7 @@ pub fn polish(input: &str) -> String {
             let words = tokenize(line);
             let words = strip_fillers(words);
             let words = collapse_stutters(words);
+            let words = collapse_phrase_repeats(words);
             let line = words.join(" ");
             let line = tidy_punctuation(&line);
             capitalize_sentences(&line)
@@ -59,14 +60,14 @@ fn tokenize(line: &str) -> Vec<String> {
 }
 
 /// The alphabetic core of a token, ignoring surrounding punctuation.
-fn core_of(token: &str) -> String {
+pub(super) fn core_of(token: &str) -> String {
     token
         .trim_matches(|c: char| !c.is_alphanumeric())
         .to_lowercase()
 }
 
 /// Whether dropping this token would also drop punctuation that ends a clause.
-fn ends_sentence(token: &str) -> bool {
+pub(super) fn ends_sentence(token: &str) -> bool {
     token.ends_with(['.', '!', '?'])
 }
 
@@ -119,6 +120,48 @@ fn collapse_stutters(words: Vec<String>) -> Vec<String> {
     }
 
     out
+}
+
+/// Longest phrase treated as a false start that was simply said again.
+const MAX_REPEATED_PHRASE: usize = 4;
+
+/// Collapse "I want it I want it to" into "I want it to".
+///
+/// The same safety bar as `collapse_stutters`, stretched to short phrases: only
+/// an *immediate* repeat of two to four words, ignoring case and punctuation,
+/// and never across a sentence boundary — "It works. It works." is the user
+/// emphasising, not restarting. Anything fuzzier (a half-spoken word, a
+/// reworded restart) is left for Rewrite, where a model can judge it.
+fn collapse_phrase_repeats(words: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+
+    for token in words {
+        out.push(token);
+
+        // A repeat can itself be repeated, so keep collapsing the tail.
+        while let Some(first_copy) = repeated_tail_start(&out) {
+            let length = (out.len() - first_copy) / 2;
+            out.drain(first_copy..first_copy + length);
+        }
+    }
+
+    out
+}
+
+/// Where the first copy of a phrase repeated at the end of `words` begins.
+fn repeated_tail_start(words: &[String]) -> Option<usize> {
+    (2..=MAX_REPEATED_PHRASE).rev().find_map(|length| {
+        let start = words.len().checked_sub(length * 2)?;
+        let (first, second) = words[start..].split_at(length);
+
+        let same = first
+            .iter()
+            .zip(second)
+            .all(|(a, b)| !core_of(a).is_empty() && core_of(a) == core_of(b));
+        let one_sentence = !first.iter().any(|token| ends_sentence(token));
+
+        (same && one_sentence).then_some(start)
+    })
 }
 
 /// Remove space before closing punctuation and guarantee one space after it.
@@ -207,6 +250,49 @@ fn is_standalone_i(chars: &[char], index: usize) -> bool {
         .get(index + 1)
         .map_or(true, |c| !c.is_alphanumeric() && *c != '\'');
     before_is_boundary && after_is_boundary
+}
+
+#[cfg(test)]
+mod phrase_repeat_tests {
+    use super::*;
+
+    fn polished(input: &str) -> String {
+        polish(&normalize_whitespace(input))
+    }
+
+    #[test]
+    fn a_restarted_phrase_collapses_to_the_final_version() {
+        assert_eq!(
+            polished("i want it i want it to be fast"),
+            "I want it to be fast"
+        );
+    }
+
+    #[test]
+    fn punctuation_between_the_copies_does_not_hide_the_repeat() {
+        assert_eq!(polished("I want it, I want it to be fast."), "I want it to be fast.");
+    }
+
+    #[test]
+    fn a_phrase_said_three_times_collapses_fully() {
+        assert_eq!(
+            polished("send the file send the file send the file now"),
+            "Send the file now"
+        );
+    }
+
+    #[test]
+    fn repeats_across_a_sentence_boundary_are_emphasis_not_a_restart() {
+        assert_eq!(polished("It works. It works."), "It works. It works.");
+    }
+
+    #[test]
+    fn different_phrases_are_never_collapsed() {
+        assert_eq!(
+            polished("i want it i would like it to be fast"),
+            "I want it I would like it to be fast"
+        );
+    }
 }
 
 #[cfg(test)]
