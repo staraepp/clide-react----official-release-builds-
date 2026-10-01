@@ -9,6 +9,7 @@
 //! possible moment, so `models()` reads the disk.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use async_trait::async_trait;
@@ -23,13 +24,26 @@ use crate::providers::traits::{
 
 const PROVIDER_ID: &str = "local-whisper";
 
+/// The model currently held in memory, and which weights it came from.
+///
+/// Loading a Whisper model reads it from disk and compiles its GPU kernels,
+/// which took ~10 seconds for a quantised large model. Doing that on every
+/// dictation made a two-second job feel broken, so the loaded state is kept
+/// and reused until a different model is chosen. The state holds the context
+/// alive, so keeping it is enough.
+type Loaded = Option<(PathBuf, whisper_rs::WhisperState)>;
+
 pub struct LocalWhisperProvider {
     models: ModelStore,
+    loaded: Arc<Mutex<Loaded>>,
 }
 
 impl LocalWhisperProvider {
     pub fn new(models: ModelStore) -> Self {
-        Self { models }
+        Self {
+            models,
+            loaded: Arc::new(Mutex::new(None)),
+        }
     }
 
     fn weights_for(&self, model_id: &str) -> Result<PathBuf, ProviderError> {
@@ -111,8 +125,9 @@ impl TranscriptionProvider for LocalWhisperProvider {
 
         // Inference is CPU/GPU-bound and blocking; it must not run on an async
         // worker or it would stall every other task in the runtime.
+        let loaded = Arc::clone(&self.loaded);
         let text = tauri::async_runtime::spawn_blocking(move || {
-            run_whisper(&weights, &audio, language.as_deref(), prompt.as_deref())
+            run_whisper(&loaded, &weights, &audio, language.as_deref(), prompt.as_deref())
         })
         .await
         .map_err(|_| ProviderError::ServiceUnavailable {
@@ -131,6 +146,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
 }
 
 fn run_whisper(
+    loaded: &Mutex<Loaded>,
     weights: &std::path::Path,
     audio: &[f32],
     language: Option<&str>,
@@ -143,15 +159,31 @@ fn run_whisper(
         detail,
     };
 
-    let context = WhisperContext::new_with_params(
-        weights.to_string_lossy().as_ref(),
-        WhisperContextParameters::default(),
-    )
-    .map_err(|e| failure(format!("the model could not be loaded: {e}")))?;
+    // Held for the whole run: two dictations never overlap, and a second one
+    // waiting for the first is correct, not a problem.
+    let mut guard = loaded.lock().unwrap_or_else(|e| e.into_inner());
 
-    let mut state = context
-        .create_state()
-        .map_err(|e| failure(format!("the model could not be started: {e}")))?;
+    if !matches!(guard.as_ref(), Some((path, _)) if path == weights) {
+        // Drop the old model first so two large models are never resident at
+        // once while the new one loads.
+        *guard = None;
+
+        let context = WhisperContext::new_with_params(
+            weights.to_string_lossy().as_ref(),
+            WhisperContextParameters::default(),
+        )
+        .map_err(|e| failure(format!("the model could not be loaded: {e}")))?;
+
+        let state = context
+            .create_state()
+            .map_err(|e| failure(format!("the model could not be started: {e}")))?;
+
+        *guard = Some((weights.to_path_buf(), state));
+    }
+
+    let Some((_, state)) = guard.as_mut() else {
+        return Err(failure("the model could not be loaded".into()));
+    };
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     // Dictation wants the words that were said, not a creative reading.
@@ -167,9 +199,15 @@ fn run_whisper(
         params.set_initial_prompt(prompt);
     }
 
-    state
-        .full(params, audio)
-        .map_err(|e| failure(format!("transcription failed: {e}")))?;
+    if let Err(error) = state.full(params, audio) {
+        // A state that failed mid-run is not trusted again.
+        *guard = None;
+        return Err(failure(format!("transcription failed: {error}")));
+    }
+
+    let Some((_, state)) = guard.as_ref() else {
+        return Err(failure("the model could not be loaded".into()));
+    };
 
     // Segments carry borrowed UTF-8 that can be split mid-character on a
     // truncated decode, so read them lossily rather than dropping the segment.

@@ -35,8 +35,19 @@ const COMMANDS: &[(&[&str], Scope)] = &[
     (&["scratch", "last", "sentence"], Scope::Sentence),
     (&["delete", "last", "sentence"], Scope::Sentence),
     (&["undo", "last", "sentence"], Scope::Sentence),
+    // Engines transcribe the command as heard, so tense varies: "scratched
+    // that" is what Parakeet wrote for a spoken "scratch that".
     (&["scratch", "that"], Scope::Clause),
+    (&["scratched", "that"], Scope::Clause),
     (&["strike", "that"], Scope::Clause),
+    (&["struck", "that"], Scope::Clause),
+];
+
+/// Words people say just before a correction. Whisper punctuates them as their
+/// own sentence ("Wait, scratch that."), which would otherwise be mistaken for
+/// the thing being scratched.
+const LEAD_INS: &[&str] = &[
+    "wait", "no", "oh", "sorry", "actually", "hmm", "um", "uh", "okay", "ok",
 ];
 
 /// The transcript after corrections, and how many were applied.
@@ -115,7 +126,13 @@ fn find_command(tokens: &[String]) -> Option<(usize, usize, Scope)> {
         for (phrase, scope) in COMMANDS {
             let end = at + phrase.len();
             if end <= cores.len() && cores[at..end].iter().zip(*phrase).all(|(a, b)| a == b) {
-                return Some((at, phrase.len(), *scope));
+                // "Wait, scratch that" — the lead-in is part of the command,
+                // not part of what is being scratched.
+                let mut start = at;
+                while start > 0 && LEAD_INS.contains(&cores[start - 1].as_str()) {
+                    start -= 1;
+                }
+                return Some((start, end - start, *scope));
             }
         }
     }
@@ -134,6 +151,15 @@ fn span_start(tokens: &[String], command_at: usize, scope: Scope) -> usize {
     }
 
     let last = command_at - 1;
+
+    // A finished sentence is scratched whole. Without this, "Hi, how are you?
+    // Scratch that." would stop at the comma and leave "Hi," behind.
+    let scope = if ends_sentence(&tokens[last]) {
+        Scope::Sentence
+    } else {
+        scope
+    };
+
     (1..=last)
         .rev()
         .find(|&index| is_boundary(&tokens[index - 1], scope))
@@ -240,6 +266,50 @@ mod tests {
         let result = apply_backtracking(input);
         assert_eq!(result.text, input);
         assert_eq!(result.corrections, 0);
+    }
+
+    /// Real Parakeet output: no punctuation, and the command in the past tense.
+    #[test]
+    fn a_real_unpunctuated_dictation_with_a_past_tense_command() {
+        let result = apply_backtracking(
+            "hi can we schedule the meeting to next wait no scratched that hi can we \
+             reschedule the meeting to tomorrow and plan on how we will sign it",
+        );
+        assert_eq!(
+            result.text,
+            "hi can we reschedule the meeting to tomorrow and plan on how we will sign it"
+        );
+        assert_eq!(result.corrections, 1);
+
+        let polished = crate::processing::process(
+            crate::processing::ProcessingMode::Polished,
+            &result.text,
+            true,
+        )
+        .unwrap();
+        assert!(polished.starts_with("Hi can we reschedule"), "got: {polished}");
+    }
+
+    /// Real Whisper output: punctuated, with a "Wait," lead-in.
+    #[test]
+    fn a_punctuated_wait_scratch_that_removes_the_whole_previous_sentence() {
+        let result = apply_backtracking(
+            "Hi, how about we move the next meeting to Thursday? Wait, scratch that. \
+             Hi, how about we schedule the next meeting to Thursday?",
+        );
+        assert_eq!(
+            result.text,
+            "Hi, how about we schedule the next meeting to Thursday?"
+        );
+        assert_eq!(result.corrections, 1);
+    }
+
+    #[test]
+    fn lead_in_words_are_removed_with_the_command() {
+        assert_eq!(
+            run("meet at three oh sorry scratch that meet at five"),
+            "meet at five"
+        );
     }
 
     #[test]
