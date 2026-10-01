@@ -79,7 +79,12 @@ impl RefineStyle {
                 "Node.js. Never change a word that makes sense in context, and never ",
                 "change anything in ordinary conversation. Spell these names ",
                 "exactly: Clide, Claude, Claude Code. Always start sentences with a ",
-                "capital letter. Otherwise preserve the speaker's wording, meaning, tone, ",
+                "capital letter. When the speaker announces a mistake or a restart ",
+                "(for example \"wait, sorry, I messed up\" or \"let me start over\"), ",
+                "delete the abandoned sentence and the announcement itself, and keep ",
+                "what they say after it. Drop meaningless sign-offs at the very end ",
+                "such as \"but yeah\" or \"or whatever\". Otherwise preserve the ",
+                "speaker's wording, meaning, tone, ",
                 "certainty, emotion, and every meaningful detail. Never summarize, ",
                 "shorten, paraphrase, answer, or add information. A line starting ",
                 "\"App:\" names where the text is being typed; use it only as ",
@@ -97,6 +102,9 @@ impl RefineStyle {
                 "software, code, or developer tools, fix words misheard as ",
                 "similar-sounding ones (\"get hub\" meant as GitHub, \"pull quest\" ",
                 "as pull request). Never change anything in ordinary conversation. ",
+                "When the speaker announces a mistake or a restart, delete the ",
+                "abandoned sentence and the announcement itself. Drop meaningless ",
+                "sign-offs at the very end such as \"but yeah\". ",
                 "Spell these names exactly: Clide, Claude, Claude Code. You ",
                 "may improve sentence structure and grammar, but never summarize, ",
                 "condense, omit facts, answer questions, or add information. A line ",
@@ -303,6 +311,16 @@ mod tests {
         assert_eq!(request.prompt(), "App: T3 Code\n<dictation>\nhello\n</dictation>");
         request.app = None;
         assert_eq!(request.prompt(), "<dictation>\nhello\n</dictation>");
+    }
+
+    #[test]
+    fn both_styles_drop_announced_restarts() {
+        for style in [RefineStyle::Tidy, RefineStyle::Written] {
+            assert!(
+                style.instruction().contains("announces a mistake or a restart"),
+                "{style:?}"
+            );
+        }
     }
 
     #[test]

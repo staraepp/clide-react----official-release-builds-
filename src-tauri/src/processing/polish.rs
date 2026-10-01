@@ -47,6 +47,7 @@ pub fn polish(input: &str) -> String {
             let words = strip_fillers(words);
             let words = collapse_stutters(words);
             let words = collapse_phrase_repeats(words);
+            let words = strip_trailing_filler(words);
             let line = words.join(" ");
             let line = tidy_punctuation(&line);
             capitalize_sentences(&line)
@@ -162,6 +163,84 @@ fn repeated_tail_start(words: &[String]) -> Option<usize> {
 
         (same && one_sentence).then_some(start)
     })
+}
+
+/// Sign-offs that carry no meaning: "…a problem, but yeah."
+///
+/// Tails that start with a connective ("but yeah") are filler even when they
+/// follow a full stop. Bare ones ("yeah", "anyway", "whatever") are only
+/// stripped from the end of a sentence, so "Did you finish? Yeah." keeps its
+/// answer.
+const TRAILING_FILLER: &[(&[&str], bool)] = &[
+    (&["but", "yeah"], true),
+    (&["so", "yeah"], true),
+    (&["and", "yeah"], true),
+    (&["but", "anyway"], true),
+    (&["so", "anyway"], true),
+    (&["but", "whatever"], true),
+    (&["or", "whatever"], true),
+    (&["yeah"], false),
+    (&["anyway"], false),
+];
+
+/// Fewest words that must remain for a tail to be treated as filler. Anything
+/// shorter is the whole answer, not a sign-off.
+const MIN_WORDS_BEFORE_FILLER: usize = 3;
+
+/// Drop a meaningless sign-off at the very end of the line, keeping the
+/// punctuation that closed it.
+fn strip_trailing_filler(mut words: Vec<String>) -> Vec<String> {
+    for (phrase, after_full_stop_too) in TRAILING_FILLER {
+        let Some(start) = words.len().checked_sub(phrase.len()) else {
+            continue;
+        };
+        if start == 0 {
+            continue;
+        }
+        if !words[start..]
+            .iter()
+            .zip(*phrase)
+            .all(|(token, word)| core_of(token) == *word)
+        {
+            continue;
+        }
+
+        let previous_ends_sentence = ends_sentence(&words[start - 1]);
+        if previous_ends_sentence && !after_full_stop_too {
+            continue;
+        }
+        // Inside a sentence the tail must follow enough words to be a
+        // sign-off rather than the answer itself. After a full stop the
+        // sentence before it stands on its own.
+        if !previous_ends_sentence && start < MIN_WORDS_BEFORE_FILLER {
+            continue;
+        }
+
+        let closing: String = words[words.len() - 1]
+            .chars()
+            .rev()
+            .take_while(|c| !c.is_alphanumeric())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        words.truncate(start);
+
+        if let Some(last) = words.last_mut() {
+            // "a problem, but yeah." -> "a problem."
+            while last.ends_with([',', ';', ':']) {
+                last.pop();
+            }
+            if !last.ends_with(['.', '!', '?']) {
+                if let Some(mark) = closing.chars().find(|c| matches!(c, '.' | '!' | '?')) {
+                    last.push(mark);
+                }
+            }
+        }
+        break;
+    }
+
+    words
 }
 
 /// Remove space before closing punctuation and guarantee one space after it.
@@ -316,6 +395,29 @@ mod phrase_repeat_tests {
     fn code_spans_are_not_recapitalised() {
         assert_eq!(polished("`src/app.tsx` is broken"), "`src/app.tsx` is broken");
         assert_eq!(polished("see `a.b`. then go"), "See `a.b`. Then go");
+    }
+
+    #[test]
+    fn a_trailing_but_yeah_is_dropped_and_the_sentence_still_ends() {
+        assert_eq!(
+            polished("so i don't think it would be a problem, but yeah."),
+            "So I don't think it would be a problem."
+        );
+        assert_eq!(polished("it should be fine but yeah"), "It should be fine");
+        assert_eq!(polished("That works. But yeah."), "That works.");
+    }
+
+    #[test]
+    fn a_bare_yeah_is_only_dropped_inside_a_sentence() {
+        assert_eq!(polished("I think so yeah"), "I think so");
+        assert_eq!(polished("Did you finish it? Yeah."), "Did you finish it? Yeah.");
+    }
+
+    #[test]
+    fn filler_in_the_middle_or_a_short_answer_is_left_alone() {
+        assert_eq!(polished("Yeah, that works for me."), "Yeah, that works for me.");
+        assert_eq!(polished("no worries anyway"), "No worries anyway");
+        assert_eq!(polished("yeah"), "Yeah");
     }
 
     #[test]

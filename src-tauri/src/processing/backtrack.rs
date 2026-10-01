@@ -37,6 +37,14 @@ const COMMANDS: &[(&[&str], Scope)] = &[
     (&["undo", "last", "sentence"], Scope::Sentence),
     // Engines transcribe the command as heard, so tense varies: "scratched
     // that" is what Parakeet wrote for a spoken "scratch that".
+    // Announced restarts. Deliberately exact: "I messed up the deploy" is a
+    // real sentence, "sorry I messed up" is a correction. The whole sentence in
+    // progress is dropped, because an abandoned half-sentence cannot be fixed
+    // by cutting at a comma.
+    (&["sorry", "i", "messed", "up"], Scope::Sentence),
+    (&["let", "me", "start", "over"], Scope::Sentence),
+    (&["let", "me", "start", "again"], Scope::Sentence),
+    (&["let", "me", "restart"], Scope::Sentence),
     (&["scratch", "that"], Scope::Clause),
     (&["scratched", "that"], Scope::Clause),
     (&["strike", "that"], Scope::Clause),
@@ -310,6 +318,34 @@ mod tests {
             run("meet at three oh sorry scratch that meet at five"),
             "meet at five"
         );
+    }
+
+    /// The dictation that prompted this: a restart announced mid-sentence.
+    #[test]
+    fn an_announced_restart_drops_the_abandoned_sentence() {
+        let result = apply_backtracking(
+            "Hey, I think we should move our meeting to tomorrow. And not only that, we should \
+             also talk about- wait, sorry, I messed up. Starting after the meeting schedule.",
+        );
+        assert_eq!(
+            result.text,
+            "Hey, I think we should move our meeting to tomorrow. Starting after the meeting schedule."
+        );
+        assert_eq!(result.corrections, 1);
+    }
+
+    #[test]
+    fn let_me_start_over_drops_the_sentence_so_far() {
+        assert_eq!(
+            run("We ship on Friday. We should probably let me start over. We ship on Monday."),
+            "We ship on Friday. We ship on Monday."
+        );
+    }
+
+    #[test]
+    fn i_messed_up_without_the_apology_is_ordinary_speech() {
+        let input = "I messed up the deploy yesterday.";
+        assert_eq!(run(input), input);
     }
 
     #[test]
