@@ -8,8 +8,8 @@
 //! trait here would collapse exactly that distinction.
 //!
 //! So this is its own small trait, its own registry, and its own setting. A
-//! user can dictate with Groq and refine with Apple Intelligence, or dictate
-//! locally and not refine at all.
+//! user can dictate with Parakeet and refine with Apple Intelligence, or
+//! dictate and not refine at all.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

@@ -100,7 +100,11 @@ export function App() {
               {view === "models" && <ModelsView />}
           {view === "history" && <HistoryView />}
               {view === "settings" && (
-                <SettingsView status={status} refresh={refresh} />
+                <SettingsView
+                  status={status}
+                  refresh={refresh}
+                  onOpenModels={() => setView("models")}
+                />
               )}
             </motion.div>
           </AnimatePresence>

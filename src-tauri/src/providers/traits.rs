@@ -1,8 +1,9 @@
 //! The contract every transcription backend implements.
 //!
 //! The rest of Clide asks a provider what it *can do* rather than which
-//! provider it *is*. Adding Apple Speech, local Whisper, or Deepgram later
-//! should mean writing one adapter, not touching the dictation pipeline.
+//! provider it *is*. Adding another on-device engine later
+//! should mean writing one adapter, not touching the dictation pipeline. Every
+//! backend runs on this Mac: there is no network leg and no credential.
 
 use std::path::{Path, PathBuf};
 
@@ -15,7 +16,8 @@ use super::error::ProviderError;
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
-    /// Runs on this machine; no network and no credential.
+    /// Runs on this machine; no network and no credential. True for every
+    /// engine in this build.
     pub local: bool,
     /// Can transcribe a finished recording in one request.
     pub batch: bool,
@@ -56,20 +58,6 @@ pub struct ModelInfo {
     pub quality: QualityClass,
     /// True when the model handles more than English.
     pub multilingual: bool,
-}
-
-/// What the provider needs before it will answer.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum CredentialRequirement {
-    /// Nothing to configure (local engines, Apple Speech).
-    None,
-    ApiKey {
-        /// Where the user goes to get one.
-        help_url: String,
-        /// Shown next to the input so a wrong key is obvious early.
-        expected_prefix: Option<String>,
-    },
 }
 
 /// A recording handed to a provider.
@@ -135,15 +123,10 @@ pub trait TranscriptionProvider: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     fn models(&self) -> Vec<ModelInfo>;
     fn default_model(&self) -> &'static str;
-    fn credential_requirement(&self) -> CredentialRequirement;
-
-    /// Check a credential without spending a transcription.
-    async fn validate_credentials(&self, credential: Option<&str>) -> Result<(), ProviderError>;
 
     async fn transcribe(
         &self,
         request: TranscriptionRequest,
-        credential: Option<&str>,
     ) -> Result<Transcription, ProviderError>;
 
     /// Whether this provider knows the given model id.
@@ -162,7 +145,6 @@ pub struct ProviderDescriptor {
     pub capabilities: Capabilities,
     pub models: Vec<ModelInfo>,
     pub default_model: String,
-    pub credential: CredentialRequirement,
 }
 
 impl ProviderDescriptor {
@@ -173,7 +155,6 @@ impl ProviderDescriptor {
             capabilities: provider.capabilities(),
             models: provider.models(),
             default_model: provider.default_model().to_string(),
-            credential: provider.credential_requirement(),
         }
     }
 }

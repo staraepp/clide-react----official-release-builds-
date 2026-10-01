@@ -17,7 +17,7 @@ use crate::models::{catalog, Engine, ModelStore};
 use super::audio::read_wav_as_mono_f32;
 use crate::providers::error::ProviderError;
 use crate::providers::traits::{
-    Capabilities, CredentialRequirement, ModelInfo, Transcription, TranscriptionProvider,
+    Capabilities, ModelInfo, Transcription, TranscriptionProvider,
     TranscriptionRequest,
 };
 
@@ -97,25 +97,9 @@ impl TranscriptionProvider for LocalWhisperProvider {
         "whisper-large-v3-turbo"
     }
 
-    fn credential_requirement(&self) -> CredentialRequirement {
-        CredentialRequirement::None
-    }
-
-    /// There is nothing to validate, but there may be nothing installed.
-    async fn validate_credentials(&self, _credential: Option<&str>) -> Result<(), ProviderError> {
-        if self.models().is_empty() {
-            return Err(ProviderError::BadRequest {
-                provider: PROVIDER_ID,
-                detail: "no local models are downloaded yet".into(),
-            });
-        }
-        Ok(())
-    }
-
     async fn transcribe(
         &self,
         request: TranscriptionRequest,
-        _credential: Option<&str>,
     ) -> Result<Transcription, ProviderError> {
         let weights = self.weights_for(&request.model)?;
         let audio = read_wav_as_mono_f32(request.audio.path())?;
@@ -211,12 +195,8 @@ mod tests {
     }
 
     #[test]
-    fn a_local_provider_needs_no_credential() {
-        let (local, _dir) = provider("credential");
-        assert!(matches!(
-            local.credential_requirement(),
-            CredentialRequirement::None
-        ));
+    fn a_local_provider_declares_itself_local() {
+        let (local, _dir) = provider("local");
         assert!(local.capabilities().local);
     }
 
@@ -224,13 +204,6 @@ mod tests {
     fn nothing_is_offered_until_something_is_installed() {
         let (local, _dir) = provider("empty");
         assert!(local.models().is_empty());
-    }
-
-    #[tokio::test]
-    async fn validation_explains_that_no_model_is_downloaded() {
-        let (local, _dir) = provider("validate");
-        let error = local.validate_credentials(None).await.unwrap_err();
-        assert!(error.to_string().contains("no local models"));
     }
 
     /// A model the user has not downloaded must produce a message about the
@@ -244,7 +217,7 @@ mod tests {
             language: None,
             prompt: None,
         };
-        let error = local.transcribe(request, None).await.unwrap_err();
+        let error = local.transcribe(request).await.unwrap_err();
         assert!(
             error.to_string().contains("not downloaded"),
             "got: {error}"
@@ -260,7 +233,7 @@ mod tests {
             language: None,
             prompt: None,
         };
-        let error = local.transcribe(request, None).await.unwrap_err();
+        let error = local.transcribe(request).await.unwrap_err();
         assert!(matches!(error, ProviderError::UnknownModel { .. }));
     }
 }

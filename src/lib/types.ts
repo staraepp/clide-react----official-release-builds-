@@ -46,7 +46,7 @@ export interface PermissionSnapshot {
   speechRecognition: PermissionStatus;
 }
 
-export type FallbackPolicy = "off" | "localOnly" | "anyConfigured";
+export type FallbackPolicy = "off" | "localOnly";
 
 export type RefineStyle = "tidy" | "written";
 
@@ -72,8 +72,8 @@ export interface SystemStatus {
   shortcutRegistered: boolean;
   providerName: string;
   modelName: string;
-  providerConfigured: boolean;
-  providerNeedsKey: boolean;
+  /** The selected engine can run the selected model right now. */
+  providerReady: boolean;
   adHocBuild: boolean;
   ready: boolean;
 }
@@ -99,24 +99,19 @@ export interface ModelInfo {
   multilingual: boolean;
 }
 
-export type CredentialRequirement =
-  | { kind: "none" }
-  | { kind: "apiKey"; helpUrl: string; expectedPrefix: string | null };
-
 export interface ProviderDescriptor {
   id: string;
   name: string;
   capabilities: Capabilities;
   models: ModelInfo[];
   defaultModel: string;
-  credential: CredentialRequirement;
 }
 
 export interface ProviderStatus {
   id: string;
   name: string;
-  /** Whether a credential is stored — never the credential itself. */
-  configured: boolean;
+  /** The engine has at least one model it can run right now. */
+  ready: boolean;
   modelId: string;
   modelName: string;
   selected: boolean;

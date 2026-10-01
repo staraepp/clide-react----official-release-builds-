@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Cloud, Cpu, HardDrive, KeyRound } from "lucide-react";
+import { Cpu, HardDrive, Info } from "lucide-react";
 
 import { Card } from "@/components/Card";
 import { StatusDot } from "@/components/StatusDot";
-import { ModelCard, CloudModelRow } from "./ModelCard";
+import { ModelCard, BuiltInModelRow } from "./ModelCard";
 import * as commands from "@/lib/commands";
 import { EVENTS, on } from "@/lib/events";
 import type { DownloadProgress, ModelsPage, ProviderDescriptor } from "@/lib/types";
@@ -72,8 +72,9 @@ export function ModelsView() {
   const provider =
     page.providers.find((candidate) => candidate.id === activeProvider) ??
     page.providers[0];
-  const localModels = provider.capabilities.local
-    ? page.models.filter((model) => model.engine === engineOf(provider.id))
+  const catalogEngine = engineOf(provider.id);
+  const localModels = catalogEngine
+    ? page.models.filter((model) => model.engine === catalogEngine)
     : [];
   const visibleLocalModels = localModels.filter((model) => {
     if (languageFilter === "multilingual") return model.multilingual;
@@ -87,7 +88,7 @@ export function ModelsView() {
 
       <section className="flex flex-col gap-2">
         <h2 className="label px-1">Engines</h2>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {page.providers.map((candidate, index) => (
             <ProviderTile
               key={candidate.id}
@@ -104,7 +105,7 @@ export function ModelsView() {
       <section className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2 px-1">
           <h2 className="label">{provider.name} models</h2>
-          {provider.capabilities.local && (
+          {catalogEngine && (
             <>
               <span className="text-[11.5px] text-ink-3">
                 {localModels.length} available · ranked for your {page.hardware.chip}
@@ -127,7 +128,7 @@ export function ModelsView() {
               "grid grid-cols-1 gap-2 lg:grid-cols-2",
             )}
           >
-            {provider.capabilities.local
+            {catalogEngine
               ? visibleLocalModels.map((model, index) => (
                     <div key={model.id} className="flex flex-col gap-1">
                       <ModelCard
@@ -163,7 +164,7 @@ export function ModelsView() {
                     </div>
                   ))
               : provider.models.map((model) => (
-                  <CloudModelRow
+                  <BuiltInModelRow
                     key={model.id}
                     name={model.name}
                     description={model.description}
@@ -180,7 +181,7 @@ export function ModelsView() {
           </motion.div>
         </AnimatePresence>
 
-        {provider.capabilities.local && visibleLocalModels.length === 0 && (
+        {catalogEngine && visibleLocalModels.length === 0 && (
             <p className="px-1 py-6 text-[13px] text-ink-3">
               No models match this filter.
             </p>
@@ -227,9 +228,14 @@ function LanguageFilters({
   );
 }
 
-/** Which catalogue engine a local provider draws from. */
-function engineOf(providerId: string): "whisper" | "parakeet" {
-  return providerId === "local-parakeet" ? "parakeet" : "whisper";
+/**
+ * Which downloadable catalogue an engine draws from, or `null` for an engine
+ * that ships with macOS and has nothing to download.
+ */
+function engineOf(providerId: string): "whisper" | "parakeet" | null {
+  if (providerId === "local-parakeet") return "parakeet";
+  if (providerId === "local-whisper") return "whisper";
+  return null;
 }
 
 function ProviderTile({
@@ -245,9 +251,6 @@ function ProviderTile({
   index: number;
   onClick: () => void;
 }) {
-  const local = provider.capabilities.local;
-  const needsKey = provider.credential.kind === "apiKey";
-
   return (
     <motion.button
       type="button"
@@ -261,17 +264,13 @@ function ProviderTile({
       )}
     >
       <span className="flex w-full items-center gap-1.5">
-        {local ? (
-          <Cpu size={12} className="text-ink-3" />
-        ) : (
-          <Cloud size={12} className="text-ink-3" />
-        )}
+        <Cpu size={12} className="text-ink-3" />
         <span className="display truncate text-[13.5px]">{provider.name}</span>
         {inUse && <StatusDot tone="ready" className="ml-auto" />}
       </span>
 
       <span className="text-[11px] text-ink-3">
-        {local ? "On this Mac" : needsKey ? "Needs an API key" : "Cloud"}
+        {engineOf(provider.id) ? "Downloaded models" : "Built into macOS"}
       </span>
     </motion.button>
   );
@@ -294,7 +293,7 @@ function Hardware({ page }: { page: ModelsPage }) {
         {page.hardware.appleSilicon ? " · Metal acceleration" : ""}
       </span>
       <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-ink-3">
-        <KeyRound size={11} />
+        <Info size={11} />
         Ratings come from this hardware, not from a leaderboard.
       </span>
     </Card>

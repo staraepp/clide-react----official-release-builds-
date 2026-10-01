@@ -192,27 +192,14 @@ async fn try_fallback(
     failed_provider: &str,
     request: &TranscriptionRequest,
 ) -> Option<crate::providers::Transcription> {
-    let candidates = crate::dictation::fallback::candidates(
-        &state.providers,
-        &state.credentials,
-        policy,
-        failed_provider,
-    );
+    let candidates =
+        crate::dictation::fallback::candidates(&state.providers, policy, failed_provider);
 
     for candidate in candidates {
-        let credential = state
-            .credentials
-            .read(candidate.provider.id())
-            .ok()
-            .flatten();
-
         let mut attempt = request.clone();
         attempt.model = candidate.model.clone();
 
-        match candidate
-            .provider
-            .transcribe(attempt, credential.as_deref())
-            .await
+        match candidate.provider.transcribe(attempt).await
         {
             Ok(result) => {
                 tracing::info!(
@@ -278,16 +265,6 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
-    // The secret lives only inside this scope — it is never logged, stored in
-    // the session, or returned to the frontend.
-    let credential = match state.credentials.read(&provider_id) {
-        Ok(value) => value,
-        Err(error) => {
-            fail(app, FailureStage::Transcription, error.to_string());
-            return None;
-        }
-    };
-
     let request = TranscriptionRequest {
         audio: AudioClip::wav(pending.path, pending.duration_secs),
         model: model_id,
@@ -295,14 +272,11 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         prompt: None,
     };
 
-    let first_attempt = provider
-        .transcribe(request.clone(), credential.as_deref())
-        .await;
+    let first_attempt = provider.transcribe(request.clone()).await;
 
     // Only reach for a substitute once the chosen engine has actually failed,
     // and never silently: whatever runs is named in the HUD. See
-    // `dictation::fallback` for why local engines are safe by default and
-    // cloud ones are not.
+    // `dictation::fallback`.
     let outcome = match first_attempt {
         Ok(result) => Ok(result),
         Err(original) => match try_fallback(app, &state, policy, &provider_id, &request).await {

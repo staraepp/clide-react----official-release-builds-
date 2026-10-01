@@ -21,6 +21,41 @@ this file only records *state of the build*, never product decisions.
 
 ---
 
+# LOCAL-ONLY PIVOT (2026-10-01) — Phase 1 of 3 done
+
+User direction: Clide becomes 100% local, Whisperflow-like (voice backtracking
+plus a polishing model), and "agent techier" (technical vocabulary and spoken
+file paths as code in dev apps). Full plan: `~/.claude/plans/cheeky-tickling-meadow.md`.
+
+**Phase 1 (done): cloud and BYOK removed.** Deleted `providers/{groq,openai,
+deepgram,elevenlabs,assemblyai}`, `providers/http.rs`, `openai_compatible.rs`,
+`credentials/`, `refine/cloud.rs`, and the frontend key UI. `TranscriptionProvider`
+lost `credential_requirement`, `validate_credentials` and the `credential`
+argument. `FallbackPolicy::AnyConfigured` is gone. Apple Speech stays (on-device,
+the only engine usable on a fresh install) and is now the default provider.
+`settings::reconcile` repairs old databases that still select `groq` or a cloud
+rewriter. `SystemStatus.providerReady` replaces `providerConfigured` /
+`providerNeedsKey`. This deliberately deviates from blueprint §10–§14 on the
+user's explicit instruction. Verified: `cargo test` 185 passed / 3 ignored,
+clippy `-D warnings` clean, `tsc` + `vite build` clean, and onboarding /
+dashboard / Settings / Models rendered in a browser against a mocked backend.
+**Not verified:** the packaged app and a real dictation after the change.
+`credentials.json` from older installs is left on disk, unused.
+
+**Phase 2 (next): backtrack.** `processing/backtrack.rs` runs first in
+`processing::process()` on the full transcript ("scratch that" removes back to
+the previous sentence boundary); phrase-level repeat collapse in `polish.rs`;
+self-correction instruction added to `RefineStyle`. Not live/streaming — the
+pipeline is one-shot by design.
+
+**Phase 3: technical context.** New `context/` module. Vocabulary priming via
+`TranscriptionRequest.prompt` (pipeline.rs hardcodes `None` today; only local
+Whisper has `prompting`). Code-span formatting of spoken paths is an opt-in
+setting, default OFF: backticks typed into a terminal are shell command
+substitution.
+
+---
+
 # START HERE
 
 ## The app works. Verified end to end, on real hardware.

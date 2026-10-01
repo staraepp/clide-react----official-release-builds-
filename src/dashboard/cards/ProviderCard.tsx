@@ -1,14 +1,13 @@
-import { ArrowUpRight, KeyRound } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { Card, CardHeader } from "@/components/Card";
 import { StatusDot } from "@/components/StatusDot";
 import { Button } from "@/components/Button";
 import type { SystemStatus } from "@/lib/types";
 
 /**
- * Which engine is doing the transcribing, and whether it is usable.
- *
- * Shows `configured`, never anything derived from the key itself: the API key
- * never leaves the backend and no part of the UI has ever seen it.
+ * Which engine is doing the transcribing, and whether it can run right now.
+ * Every engine runs on this Mac; "not ready" means the chosen model has not
+ * been downloaded.
  */
 export function ProviderCard({
   status,
@@ -33,16 +32,11 @@ export function ProviderCard({
       <p className="text-[13px] text-ink-2">{status.modelName}</p>
 
       <div className="mt-auto flex items-center gap-2 pt-4 text-[12.5px] text-ink-2">
-        <StatusDot tone={status.providerConfigured ? "ready" : "pending"} />
-        {!status.providerNeedsKey ? (
-          "No key needed — runs on this Mac"
-        ) : status.providerConfigured ? (
-          "Key stored on this Mac"
+        <StatusDot tone={status.providerReady ? "ready" : "pending"} />
+        {status.providerReady ? (
+          "Runs on this Mac"
         ) : (
-          <span className="inline-flex items-center gap-1.5 text-warn">
-            <KeyRound size={12} />
-            API key needed
-          </span>
+          <span className="text-warn">Model not downloaded</span>
         )}
       </div>
     </Card>

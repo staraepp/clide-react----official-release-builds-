@@ -356,26 +356,17 @@ Use progressive disclosure rather than exposing every control immediately.
 
 ---
 
-# Credentials
+# Local-only
 
-Cloud providers are BYOK.
+**Clide is 100% on-device (decided 2026-10-01, overriding blueprint §10–§14).**
 
-Store API keys and secrets in **macOS Keychain**.
+There are no cloud STT providers, no cloud rewrite engines, no API keys, and no
+credential store. Engines: Apple Speech, local Whisper, local Parakeet.
+Rewrite uses on-device Apple Intelligence only.
 
-Never store raw API keys in:
-
-- SQLite
-- JSON settings
-- frontend state persisted to disk
-- logs
-- analytics
-- crash reports
-
-Non-secret provider configuration may be stored locally.
-
-Clide does not require a cloud account for the core product.
-
----
+Do not reintroduce a network leg for transcription or rewriting. The only
+network traffic allowed is downloading models the user chose and the
+once-a-day release check.
 
 # Local models
 

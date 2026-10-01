@@ -6,7 +6,6 @@
 
 pub mod audio;
 pub mod commands;
-pub mod credentials;
 pub mod database;
 pub mod dictation;
 pub mod hud;
@@ -26,7 +25,6 @@ use std::time::Duration;
 use tauri::{AppHandle, Listener, Manager};
 
 use audio::Recorder;
-use credentials::Credentials;
 use database::Database;
 use models::ModelStore;
 use providers::ProviderRegistry;
@@ -35,9 +33,8 @@ use state::AppState;
 /// How often expired temporary audio is swept up.
 const AUDIO_REAPER_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Network timeout for provider requests. Long enough for a slow upload on a
-/// bad connection, short enough that a dead endpoint fails while the user is
-/// still paying attention.
+/// Network timeout for the update check: short enough that a dead endpoint
+/// fails while the user is still paying attention.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Model downloads get their own client, and deliberately **no total
@@ -89,9 +86,6 @@ pub fn run() {
             commands::permissions::open_microphone_settings,
             commands::providers::list_providers,
             commands::providers::get_provider_status,
-            commands::providers::save_provider_key,
-            commands::providers::remove_provider_key,
-            commands::providers::validate_provider,
             commands::providers::select_provider,
             commands::history::get_history,
             commands::history::search_history,
@@ -150,12 +144,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     handle.manage(AppState::new(
         database,
-        Credentials::new(&data_dir),
         ModelStore::new(&data_dir),
-        http.clone(),
+        http,
         downloads,
         recorder,
-        ProviderRegistry::new(http, ModelStore::new(&data_dir)),
+        ProviderRegistry::new(ModelStore::new(&data_dir)),
     ));
 
     // Register the configured shortcut. A failure here is reported through

@@ -12,6 +12,8 @@ use crate::refine::RefineStyle;
 use crate::database::kv;
 use crate::dictation::machine::DictationBehavior;
 use crate::processing::ProcessingMode;
+use crate::providers::ProviderRegistry;
+use crate::refine::RefinerRegistry;
 
 /// How much decorative rendering Clide is allowed to do.
 ///
@@ -59,10 +61,8 @@ pub struct AppSettings {
     /// ISO-639-1, or `None` to let the provider detect it.
     pub language: Option<String>,
     pub visual_intensity: VisualIntensity,
-    /// What Clide may substitute when the chosen engine cannot run.
-    ///
-    /// Defaults to local-only, so a rescue never sends the recording to a
-    /// cloud vendor the user did not pick for it (blueprint §12).
+    /// Whether Clide may try another on-device engine when the chosen one
+    /// cannot run. Whatever it picks is always named in the HUD.
     pub fallback: FallbackPolicy,
     /// How far Rewrite may go. Only consulted in Rewrite mode.
     pub refine_style: RefineStyle,
@@ -90,8 +90,6 @@ impl AppSettings {
             fallback: FallbackPolicy::default(),
             refine_style: RefineStyle::default(),
             spoken_punctuation: true,
-            // Only the on-device engine by default. A cloud refiner sends the
-            // transcript to a third party, which is the user's call to make.
             refine_engines: vec!["apple-intelligence".to_string()],
             onboarding_complete: false,
         }
@@ -156,6 +154,35 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
     }
 }
 
+/// Repair preferences that name something this build no longer ships.
+///
+/// Earlier builds offered cloud engines; a database written by one of them can
+/// still select `groq` or switch on a cloud rewriter. Left alone, the next
+/// dictation would fail with "not available in this build". Returns whether
+/// anything changed, so the caller knows to persist it.
+pub fn reconcile(
+    settings: &mut AppSettings,
+    providers: &ProviderRegistry,
+    refiners: &RefinerRegistry,
+) -> bool {
+    let mut changed = false;
+
+    if providers.get(&settings.provider_id).is_none() {
+        let fallback = providers.default_provider();
+        settings.provider_id = fallback.id().to_string();
+        settings.model_id = fallback.default_model().to_string();
+        changed = true;
+    }
+
+    let before = settings.refine_engines.len();
+    settings
+        .refine_engines
+        .retain(|id| refiners.get(id).is_some());
+    changed |= settings.refine_engines.len() != before;
+
+    changed
+}
+
 pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result<()> {
     kv::set(connection, keys::SHORTCUT, &settings.shortcut)?;
     kv::set(connection, keys::BEHAVIOR, &settings.behavior)?;
@@ -180,7 +207,7 @@ mod tests {
     #[test]
     fn a_fresh_install_gets_working_defaults() {
         let db = Database::in_memory().unwrap();
-        let settings = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let settings = load(&db.lock(), "apple", "apple-speech");
 
         assert_eq!(settings.shortcut, DEFAULT_SHORTCUT);
         assert_eq!(settings.behavior, DictationBehavior::Hold);
@@ -192,7 +219,7 @@ mod tests {
     #[test]
     fn settings_round_trip() {
         let db = Database::in_memory().unwrap();
-        let mut settings = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let mut settings = load(&db.lock(), "apple", "apple-speech");
         settings.shortcut = "Ctrl+Shift+D".into();
         settings.behavior = DictationBehavior::Toggle;
         settings.mode = ProcessingMode::Verbatim;
@@ -201,7 +228,7 @@ mod tests {
         settings.onboarding_complete = true;
         save(&db.lock(), &settings).unwrap();
 
-        let reloaded = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let reloaded = load(&db.lock(), "apple", "apple-speech");
         assert_eq!(reloaded.shortcut, "Ctrl+Shift+D");
         assert_eq!(reloaded.behavior, DictationBehavior::Toggle);
         assert_eq!(reloaded.mode, ProcessingMode::Verbatim);
@@ -213,19 +240,19 @@ mod tests {
     #[test]
     fn automatic_language_round_trips_as_none() {
         let db = Database::in_memory().unwrap();
-        let settings = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let settings = load(&db.lock(), "apple", "apple-speech");
         assert_eq!(settings.language, None);
 
         save(&db.lock(), &settings).unwrap();
 
-        let reloaded = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let reloaded = load(&db.lock(), "apple", "apple-speech");
         assert_eq!(reloaded.language, None);
     }
 
     #[test]
     fn one_corrupt_value_does_not_reset_the_others() {
         let db = Database::in_memory().unwrap();
-        let mut settings = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let mut settings = load(&db.lock(), "apple", "apple-speech");
         settings.shortcut = "Ctrl+Shift+D".into();
         save(&db.lock(), &settings).unwrap();
 
@@ -236,13 +263,40 @@ mod tests {
             )
             .unwrap();
 
-        let reloaded = load(&db.lock(), "groq", "whisper-large-v3-turbo");
+        let reloaded = load(&db.lock(), "apple", "apple-speech");
         assert_eq!(reloaded.shortcut, "Ctrl+Shift+D", "good values were lost");
         assert_eq!(
             reloaded.mode,
             ProcessingMode::Polished,
             "no fallback applied"
         );
+    }
+
+    #[test]
+    fn a_retired_cloud_engine_is_replaced_by_the_default() {
+        let providers =
+            ProviderRegistry::new(crate::models::ModelStore::new(&std::env::temp_dir()));
+        let refiners = RefinerRegistry::new();
+
+        let mut settings = AppSettings::defaults("groq", "whisper-large-v3-turbo");
+        settings.refine_engines = vec!["groq-rewrite".into(), "apple-intelligence".into()];
+
+        assert!(reconcile(&mut settings, &providers, &refiners));
+        assert_eq!(settings.provider_id, "apple");
+        assert_eq!(settings.model_id, "apple-speech");
+        assert_eq!(settings.refine_engines, vec!["apple-intelligence".to_string()]);
+    }
+
+    #[test]
+    fn reconcile_leaves_a_valid_selection_alone() {
+        let providers =
+            ProviderRegistry::new(crate::models::ModelStore::new(&std::env::temp_dir()));
+        let refiners = RefinerRegistry::new();
+
+        let mut settings = AppSettings::defaults("local-whisper", "whisper-base");
+        assert!(!reconcile(&mut settings, &providers, &refiners));
+        assert_eq!(settings.provider_id, "local-whisper");
+        assert_eq!(settings.model_id, "whisper-base");
     }
 
     #[test]

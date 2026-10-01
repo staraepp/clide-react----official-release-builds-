@@ -3,30 +3,19 @@
 use std::sync::Arc;
 
 use super::apple_intelligence::AppleIntelligenceRefiner;
-use super::cloud::CloudRefiner;
 use super::traits::{Refiner, RefinerDescriptor};
-use crate::credentials::Credentials;
 
 pub struct RefinerRegistry {
     refiners: Vec<Arc<dyn Refiner>>,
 }
 
 impl RefinerRegistry {
-    pub fn new(http: reqwest::Client, credentials: Credentials) -> Self {
+    pub fn new() -> Self {
         Self {
-            // Apple Intelligence first: it is the only one that never sends
-            // the transcript anywhere, so it is the one to reach for by
-            // default. The cloud engines are off until switched on.
-            refiners: vec![
-                // Order is the fallback order. Apple Intelligence first
-                // because it is the only rewriter that keeps the transcript on
-                // the Mac. Spoken punctuation is *not* here — it is a
-                // pre-pass, applied before any of these, so enabling it can
-                // never stop a rewrite from happening.
-                Arc::new(AppleIntelligenceRefiner::new()),
-                Arc::new(CloudRefiner::groq(http.clone(), credentials.clone())),
-                Arc::new(CloudRefiner::openai(http, credentials)),
-            ],
+            // Order is the fallback order. Spoken punctuation is *not* here —
+            // it is a pre-pass, applied before any of these, so enabling it
+            // can never stop a rewrite from happening.
+            refiners: vec![Arc::new(AppleIntelligenceRefiner::new())],
         }
     }
 
@@ -37,8 +26,8 @@ impl RefinerRegistry {
     /// The first backend that is both switched on and able to run.
     ///
     /// `enabled` is the user's explicit list. A refiner absent from it is
-    /// never used, however available it happens to be — which is what makes
-    /// "the transcript leaves your Mac" a decision rather than a side effect.
+    /// never used, however available it happens to be: Rewrite only ever runs
+    /// an engine the user switched on.
     pub fn first_enabled(&self, enabled: &[String]) -> Option<Arc<dyn Refiner>> {
         self.refiners
             .iter()
@@ -53,19 +42,19 @@ impl RefinerRegistry {
     }
 }
 
+impl Default for RefinerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn registry() -> RefinerRegistry {
-        let dir = std::env::temp_dir().join("clide-refiner-registry");
-        std::fs::create_dir_all(&dir).unwrap();
-        RefinerRegistry::new(reqwest::Client::new(), Credentials::new(&dir))
-    }
-
     #[test]
     fn every_refiner_has_a_unique_id() {
-        let registry = registry();
+        let registry = RefinerRegistry::new();
         let mut ids: Vec<_> = registry.descriptors().into_iter().map(|d| d.id).collect();
         let count = ids.len();
         ids.sort();
@@ -75,40 +64,29 @@ mod tests {
 
     #[test]
     fn a_refiner_can_be_looked_up_by_id() {
-        let registry = registry();
+        let registry = RefinerRegistry::new();
         assert!(registry.get("apple-intelligence").is_some());
         assert!(registry.get("nonexistent").is_none());
     }
 
-    /// The privacy rule, as a test: an engine the user has not switched on is
-    /// never used, no matter how available it is.
+    /// An engine the user has not switched on is never used, no matter how
+    /// available it is.
     #[test]
     fn a_refiner_that_is_not_enabled_is_never_chosen() {
-        let registry = registry();
+        let registry = RefinerRegistry::new();
         assert!(
             registry.first_enabled(&[]).is_none(),
             "a refiner ran with nothing enabled"
         );
-
-        // Naming only one engine must never reach for a different one.
-        let only_cloud = vec!["groq-rewrite".to_string()];
-        if let Some(chosen) = registry.first_enabled(&only_cloud) {
-            assert_eq!(chosen.id(), "groq-rewrite");
-        }
+        assert!(registry
+            .first_enabled(&["groq-rewrite".to_string()])
+            .is_none());
     }
 
-    /// Local refinement is preferred when several are enabled, because it is
-    /// the only one that does not send the transcript anywhere.
     #[test]
-    fn the_local_engine_is_preferred_over_cloud_ones() {
-        let registry = registry();
-        let ids: Vec<String> = registry.descriptors().into_iter().map(|d| d.id).collect();
-
-        let local_at = ids.iter().position(|id| id == "apple-intelligence");
-        let cloud_at = ids.iter().position(|id| id == "groq-rewrite");
-
-        if let (Some(local), Some(cloud)) = (local_at, cloud_at) {
-            assert!(local < cloud, "a cloud refiner outranked the local one");
+    fn every_refiner_runs_on_this_mac() {
+        for descriptor in RefinerRegistry::new().descriptors() {
+            assert!(descriptor.local, "{} is not local", descriptor.id);
         }
     }
 }

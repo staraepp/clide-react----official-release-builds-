@@ -5,7 +5,6 @@ import { Segmented } from "@/components/Segmented";
 import { Toggle } from "@/components/Toggle";
 import { ShortcutRecorder } from "@/components/ShortcutRecorder";
 import { Button } from "@/components/Button";
-import { ProviderSettings } from "@/providers/ProviderSettings";
 import { RefineSection } from "./RefineSection";
 import { AboutSection } from "./AboutSection";
 import * as commands from "@/lib/commands";
@@ -14,9 +13,11 @@ import type { SystemStatus } from "@/lib/types";
 export function SettingsView({
   status,
   refresh,
+  onOpenModels,
 }: {
   status: SystemStatus;
   refresh: () => void;
+  onOpenModels: () => void;
 }) {
   const [shortcutError, setShortcutError] = useState<string | null>(null);
   const [insertionTest, setInsertionTest] = useState<string | null>(null);
@@ -71,9 +72,20 @@ export function SettingsView({
       <Section
         span="full"
         title="Transcription"
-        description="clide is bring-your-own-key. Keys are stored on this Mac only, in a file just your account can read. They never reach clide's database, its settings, or any log."
+        description="Everything runs on this Mac. Your audio is never uploaded, and no account or key is needed."
       >
-        <ProviderSettings onChange={refresh} />
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="min-w-0">
+            <p className="display text-[15px] text-ink">{status.providerName}</p>
+            <p className="text-[12.5px] text-ink-2">
+              {status.modelName}
+              {status.providerReady ? "" : " · not downloaded yet"}
+            </p>
+          </div>
+          <Button className="ml-auto" onClick={onOpenModels}>
+            Choose engine and models
+          </Button>
+        </div>
       </Section>
 
       <Section
@@ -122,22 +134,15 @@ export function SettingsView({
             { value: "off", label: "Just tell me", hint: "Report the failure and let me choose" },
             {
               value: "localOnly",
-              label: "Use a local model",
-              hint: "Your audio stays on this Mac",
-            },
-            {
-              value: "anyConfigured",
-              label: "Use anything set up",
-              hint: "May send the recording to another cloud provider",
+              label: "Try another engine",
+              hint: "Another on-device engine takes over",
             },
           ]}
         />
         <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
-          {status.settings.fallback === "anyConfigured"
-            ? "Recordings may be sent to a provider you did not pick for them."
-            : status.settings.fallback === "localOnly"
-              ? "Substitutes run on this Mac, so nothing extra leaves it."
-              : "Nothing is substituted. You'll get a Retry button instead."}
+          {status.settings.fallback === "localOnly"
+            ? "Another engine on this Mac takes over, and the HUD says which."
+            : "Nothing is substituted. You'll get a Retry button instead."}
         </p>
       </Section>
 

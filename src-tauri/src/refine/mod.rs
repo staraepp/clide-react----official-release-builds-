@@ -9,7 +9,6 @@
 //! — a rewrite that cannot run must never cost the user their words.
 
 pub mod apple_intelligence;
-pub mod cloud;
 pub mod registry;
 pub mod traits;
 

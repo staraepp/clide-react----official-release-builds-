@@ -3,7 +3,6 @@
 use std::sync::Mutex;
 
 use crate::audio::Recorder;
-use crate::credentials::Credentials;
 use crate::database::Database;
 use crate::models::ModelStore;
 use crate::dictation::DictationSession;
@@ -13,11 +12,9 @@ use crate::settings::{self, AppSettings};
 
 pub struct AppState {
     pub db: Database,
-    /// Provider API keys. See `credentials` for why this is not the Keychain.
-    pub credentials: Credentials,
     /// Local model weights on this machine.
     pub models: ModelStore,
-    /// Shared HTTP client for provider API calls. Has a total timeout.
+    /// Shared HTTP client for the update check. Has a total timeout.
     pub http: reqwest::Client,
     /// Separate client for model downloads: no total timeout, because that
     /// would cap how long a download may take. See `lib.rs`.
@@ -42,36 +39,38 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         db: Database,
-        credentials: Credentials,
         models: ModelStore,
         http: reqwest::Client,
         downloads: reqwest::Client,
         recorder: Recorder,
         providers: ProviderRegistry,
     ) -> Self {
-        // Cloud refiners reuse the transcription credentials and client.
-        let http_for_refiners = http.clone();
-        let credentials_for_refiners = credentials.clone();
+        let refiners = RefinerRegistry::new();
 
         let settings = {
             let default_provider = providers.default_provider();
             let connection = db.lock();
-            settings::load(
+            let mut loaded = settings::load(
                 &connection,
                 default_provider.id(),
                 default_provider.default_model(),
-            )
+            );
+            if settings::reconcile(&mut loaded, &providers, &refiners) {
+                if let Err(error) = settings::save(&connection, &loaded) {
+                    tracing::warn!(%error, "could not persist the repaired preferences");
+                }
+            }
+            loaded
         };
 
         Self {
             db,
-            credentials,
             models,
             http,
             downloads,
             recorder,
             providers,
-            refiners: RefinerRegistry::new(http_for_refiners, credentials_for_refiners),
+            refiners,
             session: DictationSession::new(),
             settings: Mutex::new(settings),
             registered_shortcut: Mutex::new(None),

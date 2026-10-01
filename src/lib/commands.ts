@@ -62,16 +62,6 @@ export const listProviders = () =>
 export const getProviderStatus = () =>
   invoke<ProviderStatus[]>("get_provider_status");
 
-/** Validates the key with the provider, then stores it locally. */
-export const saveProviderKey = (providerId: string, key: string) =>
-  invoke<void>("save_provider_key", { providerId, key });
-
-export const removeProviderKey = (providerId: string) =>
-  invoke<void>("remove_provider_key", { providerId });
-
-export const validateProvider = (providerId: string) =>
-  invoke<void>("validate_provider", { providerId });
-
 export const selectProvider = (providerId: string, modelId?: string) =>
   invoke<void>("select_provider", { providerId, modelId: modelId ?? null });
 

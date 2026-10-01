@@ -1,8 +1,4 @@
-//! Provider configuration.
-//!
-//! API keys enter through `save_provider_key` and are written straight to the
-//! credential store. No command returns a key, and no command echoes one back
-//! in an error message.
+//! Choosing which on-device engine and model transcribe dictation.
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -11,14 +7,14 @@ use crate::database::{now_ms, providers as provider_store};
 use crate::providers::ProviderDescriptor;
 use crate::state::AppState;
 
-/// Everything the UI needs about a provider except the secret.
+/// What the UI needs to know about each engine.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
     pub id: String,
     pub name: String,
-    /// Whether a credential is stored. Never the credential itself.
-    pub configured: bool,
+    /// Whether the engine has at least one model it can run right now.
+    pub ready: bool,
     pub model_id: String,
     pub model_name: String,
     pub selected: bool,
@@ -56,7 +52,7 @@ pub fn get_provider_status(app: AppHandle) -> Result<Vec<ProviderStatus>, String
                 .unwrap_or_else(|| model_id.clone());
 
             ProviderStatus {
-                configured: state.credentials.is_configured(&descriptor.id),
+                ready: !descriptor.models.is_empty(),
                 selected: settings.provider_id == descriptor.id,
                 id: descriptor.id,
                 name: descriptor.name,
@@ -65,73 +61,6 @@ pub fn get_provider_status(app: AppHandle) -> Result<Vec<ProviderStatus>, String
             }
         })
         .collect())
-}
-
-/// Store an API key.
-///
-/// The key is validated against the provider before being written, so a typo
-/// is caught here rather than at the end of the user's first dictation.
-#[tauri::command]
-pub async fn save_provider_key(
-    app: AppHandle,
-    provider_id: String,
-    key: String,
-) -> Result<(), String> {
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err("Enter an API key first.".into());
-    }
-
-    let provider = app
-        .state::<AppState>()
-        .providers
-        .get(&provider_id)
-        .ok_or_else(|| format!("Unknown provider \"{provider_id}\"."))?;
-
-    provider
-        .validate_credentials(Some(&key))
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let state = app.state::<AppState>();
-    state
-        .credentials
-        .store(&provider_id, &key)
-        .map_err(|error| error.to_string())?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn remove_provider_key(app: AppHandle, provider_id: String) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    state
-        .credentials
-        .delete(&provider_id)
-        .map_err(|error| error.to_string())?;
-
-    Ok(())
-}
-
-/// Check the stored credential against the provider.
-#[tauri::command]
-pub async fn validate_provider(app: AppHandle, provider_id: String) -> Result<(), String> {
-    let provider = app
-        .state::<AppState>()
-        .providers
-        .get(&provider_id)
-        .ok_or_else(|| format!("Unknown provider \"{provider_id}\"."))?;
-
-    let credential = app
-        .state::<AppState>()
-        .credentials
-        .read(&provider_id)
-        .map_err(|error| error.to_string())?;
-
-    provider
-        .validate_credentials(credential.as_deref())
-        .await
-        .map_err(|error| error.to_string())
 }
 
 /// Choose the provider and model used for dictation.
