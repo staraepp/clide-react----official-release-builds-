@@ -446,7 +446,13 @@ Do not create an entirely separate transcript architecture for imports.
 
 # Dashboard
 
-The main application uses a **bento-style dashboard**.
+> **Superseded (2026-10-01, user direction).** The app is now a flat sidebar
+> (Home / History / Models / Settings) with a single-column Home: dictation,
+> engine + style, recent transcripts, usage. No cards, no bento grid, and no
+> dashboard customization is planned. The widget list below is kept as the pool
+> of things Home may surface, not as a layout.
+
+The main application previously used a **bento-style dashboard**.
 
 The intended long-term dashboard is customizable and can contain widgets such as:
 
@@ -476,9 +482,15 @@ Real dashboard customization comes later.
 
 # Visual direction
 
+> **Superseded (2026-10-01, user direction).** The palette is **monochrome**:
+> ink on paper, light or dark following macOS. "Blue means voice" no longer
+> applies; `--color-voice` is the ink colour. Flat surfaces separated by
+> hairlines, DM Sans, no card chrome. The shader is a faint grayscale wash.
+> The bullets below are the original direction.
+
 Clide is not intended to look like macOS Settings.
 
-The visual direction is:
+The visual direction was:
 
 - modern custom web-app UI
 - soft experimental surfaces
