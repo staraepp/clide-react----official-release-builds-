@@ -8,7 +8,6 @@
     "core:window:allow-start-dragging",
     "core:window:allow-show",
     "core:window:allow-hide",
-    "core:event:default",
-    "opener:allow-open-url"
+    "core:event:default"
   ]
 }

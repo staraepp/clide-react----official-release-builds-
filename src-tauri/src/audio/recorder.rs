@@ -300,6 +300,10 @@ fn finish(session: Active, clip_dir: &std::path::Path) -> Result<RecordedClip, A
         return Err(AudioError::Empty);
     }
 
+    // Measured here, judged by the pipeline: live typing may already have
+    // heard words a strict threshold would miss.
+    let stats = super::speech::analyze(&samples);
+
     // Trim a trailing DC tail if the device padded the buffer.
     while samples.last() == Some(&0) && samples.len() > 1 {
         samples.pop();
@@ -308,7 +312,7 @@ fn finish(session: Active, clip_dir: &std::path::Path) -> Result<RecordedClip, A
     let path = clip_dir.join(format!("{}.wav", uuid::Uuid::new_v4()));
     write_wav(&path, &samples)?;
 
-    Ok(RecordedClip::new(path, session.started.elapsed()))
+    Ok(RecordedClip::new(path, session.started.elapsed()).with_speech(stats.speech))
 }
 
 fn write_wav(path: &std::path::Path, samples: &[i16]) -> Result<(), AudioError> {

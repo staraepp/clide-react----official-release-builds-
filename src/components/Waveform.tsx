@@ -9,8 +9,10 @@ import { cn } from "@/lib/cn";
  * breathing rather than flicker. The centre reacts first and the outer bars
  * follow a beat later, which makes every swell travel outward and settle back.
  *
- * Levels are mapped on a decibel scale with a soft curve, so a whisper still
- * registers but ordinary speech does not slam every bar to full height. Drawn
+ * Levels are mapped on a decibel scale relative to how loud this speaker, on
+ * this microphone, actually is: the top of the range follows the loudest recent
+ * speech and drifts back down slowly. A quiet laptop mic and a loud headset
+ * therefore move the bars the same amount, and so do a whisper and a shout. Drawn
  * on a canvas and driven by a ref rather than React state: re-rendering a
  * component tree 30 times a second would cost more than the audio pipeline.
  */
@@ -37,6 +39,19 @@ const RIPPLE_STEP_MS = 55;
 const SAMPLE_INTERVAL_MS = 34;
 /** The outermost bars never reach the height of the centre ones. */
 const EDGE_REACH = 0.55;
+
+/** The loudest recent speech sets the top of the range, but never below this
+ *  (so room noise is not boosted into movement)... */
+const MIN_CEILING_DB = -48;
+const MAX_CEILING_DB = -6;
+/** ...and it relaxes by this many dB a second once the speaker gets quieter. */
+const CEILING_DECAY_DB_PER_SECOND = 5;
+/** The bars span this many dB below the ceiling. */
+const RANGE_DB = 30;
+/** Below this fraction of the range a bar stays at rest... */
+const GATE = 0.1;
+/** ...and nothing quieter than this ever moves them, whatever the ceiling. */
+const NOISE_GATE_DB = -55;
 
 export function Waveform({
   levelRef,
@@ -66,6 +81,7 @@ export function Waveform({
     );
     const history: number[] = Array(Math.max(...lag) + 1).fill(0);
     const heights: number[] = Array(bars).fill(0);
+    let ceilingDb = MIN_CEILING_DB;
 
     let frame = 0;
     let lastPush = 0;
@@ -86,7 +102,18 @@ export function Waveform({
 
       if (now - lastPush > SAMPLE_INTERVAL_MS) {
         lastPush = now;
-        history.push(frozenRef.current ? 0 : decibelAmplitude(levelRef.current ?? 0));
+        const decibels = levelToDecibels(levelRef.current ?? 0);
+        if (decibels > ceilingDb) {
+          ceilingDb = Math.min(MAX_CEILING_DB, decibels);
+        } else {
+          ceilingDb = Math.max(
+            MIN_CEILING_DB,
+            ceilingDb - CEILING_DECAY_DB_PER_SECOND * (SAMPLE_INTERVAL_MS / 1000),
+          );
+        }
+        history.push(
+          frozenRef.current ? 0 : relativeAmplitude(decibels, ceilingDb),
+        );
         history.shift();
       }
 
@@ -124,16 +151,17 @@ export function Waveform({
   );
 }
 
-/**
- * Map an RMS level to 0..1 on a decibel scale, then ease the curve. -52 dB (a
- * quiet room) is the floor and -8 dB (loud speech) the ceiling; the exponent
- * keeps ordinary speech in the middle of the range instead of pinned at the top.
- */
-function decibelAmplitude(level: number): number {
-  if (level <= 0.0004) return 0;
-  const decibels = 20 * Math.log10(level);
-  const linear = Math.min(1, Math.max(0, (decibels + 52) / 44));
-  return Math.pow(linear, 1.35);
+function levelToDecibels(level: number): number {
+  return level <= 0.00001 ? -120 : 20 * Math.log10(level);
+}
+
+/** Where `decibels` sits in the window below the current ceiling, 0..1, eased
+ *  so ordinary speech lives in the middle of the range rather than the top. */
+function relativeAmplitude(decibels: number, ceilingDb: number): number {
+  if (decibels < NOISE_GATE_DB) return 0;
+  const linear = (decibels - (ceilingDb - RANGE_DB)) / RANGE_DB;
+  if (linear <= GATE) return 0;
+  return Math.pow(Math.min(1, (linear - GATE) / (1 - GATE)), 1.5);
 }
 
 function roundedBar(

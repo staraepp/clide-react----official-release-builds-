@@ -329,6 +329,13 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
+    // Silence, a click or a breath. Speech models answer these with invented
+    // text ("Thank you."), so they never get to see them.
+    if pending.speech < crate::audio::speech::MIN_SPEECH {
+        fail_transcription(app, NO_SPEECH_MESSAGE);
+        return None;
+    }
+
     let (provider_id, model_id, language, policy, vocabulary) = {
         let settings = state.settings();
         (
@@ -380,6 +387,11 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
     };
 
     match outcome {
+        Ok(result) if crate::audio::speech::is_phantom_transcript(&result.text, pending.speech) => {
+            tracing::info!(text = %result.text, "discarded a transcript the model invented from near-silence");
+            fail_transcription(app, NO_SPEECH_MESSAGE);
+            None
+        }
         Ok(result) => {
             tracing::info!(
                 provider = %result.provider,
@@ -667,6 +679,52 @@ async fn deliver(app: &AppHandle, text: String) {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/// How long the "no speech" notice stays before it clears itself.
+const NO_SPEECH_LINGER: Duration = Duration::from_millis(2800);
+
+const NO_SPEECH_MESSAGE: &str = "No speech was heard. Check that the right microphone is selected.";
+
+/// Settle on a transcription failure that a retry cannot fix.
+fn fail_transcription(app: &AppHandle, message: &str) {
+    let state = app.state::<AppState>();
+    if let Ok(next) = state
+        .session
+        .apply(DictationInput::transcription_failure(message, false))
+    {
+        events::emit_state(app, &next);
+    }
+    events::emit(
+        app,
+        events::TRANSCRIPTION_FAILED,
+        events::FailurePayload {
+            message: message.to_string(),
+            retryable: false,
+        },
+    );
+    hud::show(app);
+    schedule_failure_dismiss(app.clone());
+}
+
+/// An accidental tap should not leave a card waiting to be closed.
+fn schedule_failure_dismiss(app: AppHandle) {
+    let epoch = app.state::<AppState>().session.epoch();
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(NO_SPEECH_LINGER).await;
+
+        let state = app.state::<AppState>();
+        if state.session.epoch() != epoch {
+            return;
+        }
+        if matches!(
+            state.session.state(),
+            DictationState::TranscriptionFailed { .. }
+        ) {
+            dismiss(&app);
+        }
+    });
+}
 
 fn fail(app: &AppHandle, stage: FailureStage, message: impl Into<String>) {
     // Whatever went wrong, the user's volume is not part of it.

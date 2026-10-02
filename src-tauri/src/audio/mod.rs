@@ -5,6 +5,7 @@ pub mod ducking;
 pub mod error;
 pub mod recorder;
 pub mod resample;
+pub mod speech;
 
 pub use clip::{RecordedClip, RECOVERY_WINDOW};
 pub use error::AudioError;

@@ -189,6 +189,11 @@ fn run_whisper(
     // Dictation wants the words that were said, not a creative reading.
     params.set_temperature(0.0);
     params.set_translate(false);
+    // Whisper's own silence guards, as a second line behind the recorder's
+    // speech check: don't emit blank tokens, and drop segments it believes
+    // contain no speech.
+    params.set_suppress_blank(true);
+    params.set_no_speech_thold(0.6);
     params.set_print_progress(false);
     params.set_print_special(false);
     params.set_print_realtime(false);

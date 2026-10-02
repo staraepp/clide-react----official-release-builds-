@@ -6,7 +6,6 @@
  * command breaks the build rather than a button.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl as openExternal } from "@tauri-apps/plugin-opener";
 import type {
   About,
   PermissionStatus,
@@ -139,20 +138,6 @@ export const setRefineStyle = (style: RefineStyle) =>
 export const getAbout = () => invoke<About>("get_about");
 export const checkForUpdates = (force = false) =>
   invoke<UpdateStatus>("check_for_updates", { force });
-
-/**
- * Open a link in the user's browser.
- *
- * Never navigates the webview itself — clide's window is the app, and a page
- * loading into it would replace the app with a website.
- */
-export async function openUrl(url: string): Promise<void> {
-  try {
-    await openExternal(url);
-  } catch (error) {
-    console.error("could not open the link", error);
-  }
-}
 
 /** Apple Speech only. Separate from the microphone, even though it is on-device. */
 export const requestSpeechPermission = () =>

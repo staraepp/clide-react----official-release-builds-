@@ -17,6 +17,8 @@ pub const RECOVERY_WINDOW: Duration = Duration::from_secs(120);
 pub struct RecordedClip {
     path: PathBuf,
     duration: Duration,
+    /// How much of the clip had a voice in it.
+    speech: Duration,
     created: Instant,
 }
 
@@ -25,8 +27,18 @@ impl RecordedClip {
         Self {
             path,
             duration,
+            speech: duration,
             created: Instant::now(),
         }
+    }
+
+    pub fn with_speech(mut self, speech: Duration) -> Self {
+        self.speech = speech;
+        self
+    }
+
+    pub fn speech(&self) -> Duration {
+        self.speech
     }
 
     pub fn path(&self) -> &Path {

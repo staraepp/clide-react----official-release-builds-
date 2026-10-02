@@ -27,6 +27,8 @@ struct Pending {
 pub struct PendingSnapshot {
     pub path: PathBuf,
     pub duration_secs: f32,
+    /// Time with a voice in it.
+    pub speech: std::time::Duration,
     pub target: FocusTarget,
 }
 
@@ -131,6 +133,7 @@ impl DictationSession {
         Some(PendingSnapshot {
             path: clip.path().to_path_buf(),
             duration_secs: clip.duration().as_secs_f32(),
+            speech: clip.speech(),
             target: pending.target.clone(),
         })
     }
