@@ -27,6 +27,13 @@ use super::resample::{rms_level, MonoDownsampler, TARGET_SAMPLE_RATE};
 /// mistake the user wants to abandon rather than transcribe.
 const MAX_CAPTURE: Duration = Duration::from_secs(600);
 
+/// Receives each new batch of 16 kHz mono samples as capture produces them.
+///
+/// Runs on the audio callback thread, so it must only hand the samples off.
+pub type SampleTap = Arc<dyn Fn(&[i16]) + Send + Sync>;
+
+type TapSlot = Arc<Mutex<Option<SampleTap>>>;
+
 /// Where the capture callback writes; drained by the worker thread on stop.
 struct CaptureSink {
     downsampler: MonoDownsampler,
@@ -34,6 +41,7 @@ struct CaptureSink {
     level: Arc<AtomicU32>,
     max_samples: usize,
     reached_limit: bool,
+    tap: TapSlot,
 }
 
 impl CaptureSink {
@@ -45,7 +53,16 @@ impl CaptureSink {
             self.reached_limit = true;
             return;
         }
+        let before = self.samples.len();
         self.downsampler.push(interleaved, &mut self.samples);
+
+        if self.samples.len() > before {
+            if let Ok(tap) = self.tap.lock() {
+                if let Some(tap) = tap.as_ref() {
+                    tap(&self.samples[before..]);
+                }
+            }
+        }
     }
 }
 
@@ -60,6 +77,7 @@ enum Command {
 pub struct Recorder {
     commands: SyncSender<Command>,
     level: Arc<AtomicU32>,
+    tap: TapSlot,
 }
 
 impl Recorder {
@@ -69,18 +87,28 @@ impl Recorder {
         let (tx, rx) = sync_channel::<Command>(4);
         let level = Arc::new(AtomicU32::new(0));
         let worker_level = Arc::clone(&level);
+        let tap: TapSlot = Arc::new(Mutex::new(None));
+        let worker_tap = Arc::clone(&tap);
 
         std::thread::Builder::new()
             .name("clide-audio".into())
-            .spawn(move || worker_loop(rx, clip_dir, worker_level))
+            .spawn(move || worker_loop(rx, clip_dir, worker_level, worker_tap))
             .expect("failed to spawn the audio worker thread");
 
-        Self { commands: tx, level }
+        Self { commands: tx, level, tap }
     }
 
     /// Current microphone level in 0.0..=1.0, sampled by the HUD.
     pub fn level(&self) -> f32 {
         f32::from_bits(self.level.load(Ordering::Relaxed))
+    }
+
+    /// Mirror captured audio to `tap` until it is cleared with `None`. Used by
+    /// live typing; the clip written on stop is unaffected.
+    pub fn set_tap(&self, tap: Option<SampleTap>) {
+        if let Ok(mut slot) = self.tap.lock() {
+            *slot = tap;
+        }
     }
 
     pub fn start(&self) -> Result<(), AudioError> {
@@ -114,7 +142,7 @@ struct Active {
     started: Instant,
 }
 
-fn worker_loop(rx: Receiver<Command>, clip_dir: PathBuf, level: Arc<AtomicU32>) {
+fn worker_loop(rx: Receiver<Command>, clip_dir: PathBuf, level: Arc<AtomicU32>, tap: TapSlot) {
     let _ = std::fs::create_dir_all(&clip_dir);
     super::clip::sweep_orphans(&clip_dir);
 
@@ -126,7 +154,7 @@ fn worker_loop(rx: Receiver<Command>, clip_dir: PathBuf, level: Arc<AtomicU32>) 
                 let result = if active.is_some() {
                     Err(AudioError::AlreadyRecording)
                 } else {
-                    match open_stream(Arc::clone(&level)) {
+                    match open_stream(Arc::clone(&level), Arc::clone(&tap)) {
                         Ok(started) => {
                             active = Some(started);
                             Ok(())
@@ -156,7 +184,7 @@ fn worker_loop(rx: Receiver<Command>, clip_dir: PathBuf, level: Arc<AtomicU32>) 
     }
 }
 
-fn open_stream(level: Arc<AtomicU32>) -> Result<Active, AudioError> {
+fn open_stream(level: Arc<AtomicU32>, tap: TapSlot) -> Result<Active, AudioError> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or(AudioError::NoInputDevice)?;
     let config = device
@@ -174,6 +202,7 @@ fn open_stream(level: Arc<AtomicU32>) -> Result<Active, AudioError> {
         level,
         max_samples: TARGET_SAMPLE_RATE as usize * MAX_CAPTURE.as_secs() as usize,
         reached_limit: false,
+        tap,
     }));
 
     let stream_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));

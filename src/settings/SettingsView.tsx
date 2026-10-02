@@ -86,6 +86,28 @@ export function SettingsView({
       </Section>
 
       <Section
+        title="Live typing"
+        description="Words appear in the app you are speaking to as you say them, instead of all at once when you stop."
+      >
+        <label className="flex items-center gap-3">
+          <Toggle
+            checked={status.settings.liveTyping}
+            label="Type words as you speak"
+            onChange={async (next) => {
+              await commands.setLiveTyping(next);
+              refresh();
+            }}
+          />
+          <span className="text-[13px] text-ink">
+            {status.settings.liveTyping ? "On" : "Off"}
+          </span>
+        </label>
+        <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
+          {liveTypingNote(status)}
+        </p>
+      </Section>
+
+      <Section
         title="Spoken punctuation"
         description="Say &ldquo;comma&rdquo;, &ldquo;new line&rdquo; or &ldquo;question mark&rdquo; and clide types the punctuation instead of the word. Works in every mode and adds no delay."
       >
@@ -315,4 +337,17 @@ function Section({
       <div className="min-w-0">{children}</div>
     </section>
   );
+}
+
+function liveTypingNote(status: SystemStatus): string {
+  if (!status.settings.liveTyping) {
+    return "Everything is typed in one go when you stop speaking.";
+  }
+  if (!status.providerStreaming) {
+    return `${status.providerName} can only transcribe a finished recording. Choose Apple Speech to type as you speak.`;
+  }
+  if (status.settings.mode === "rewrite") {
+    return "Rewrite needs the whole recording, so this is paused while Rewrite is the style.";
+  }
+  return "Spoken corrections such as \u201cscratch that\u201d are typed as words while this is on, because the text is already on screen.";
 }

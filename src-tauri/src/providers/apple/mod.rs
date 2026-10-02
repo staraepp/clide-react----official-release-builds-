@@ -8,6 +8,8 @@
 //! to Apple's servers, and a provider Clide describes as local must actually be
 //! local.
 
+pub mod live;
+
 use std::sync::mpsc;
 use std::time::Instant;
 
@@ -78,7 +80,7 @@ pub fn request_authorization() -> SFSpeechRecognizerAuthorizationStatus {
 
 /// Fail with a sentence the user can act on when speech recognition has not
 /// been granted.
-fn require_speech_access() -> Result<(), ProviderError> {
+pub(crate) fn require_speech_access() -> Result<(), ProviderError> {
     match authorization() {
         SFSpeechRecognizerAuthorizationStatus::Authorized => Ok(()),
         SFSpeechRecognizerAuthorizationStatus::NotDetermined => Err(ProviderError::BadRequest {
@@ -106,7 +108,7 @@ impl TranscriptionProvider for AppleSpeechProvider {
         Capabilities {
             local: true,
             batch: true,
-            streaming: false,
+            streaming: true,
             timestamps: true,
             word_timestamps: true,
             diarization: false,

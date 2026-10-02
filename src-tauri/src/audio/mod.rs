@@ -8,4 +8,4 @@ pub mod resample;
 
 pub use clip::{RecordedClip, RECOVERY_WINDOW};
 pub use error::AudioError;
-pub use recorder::Recorder;
+pub use recorder::{Recorder, SampleTap};

@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager};
 use crate::audio::AudioError;
 use crate::database::{now_ms, transcripts};
 use crate::dictation::events;
+use crate::dictation::live;
 use crate::dictation::machine::{DictationInput, DictationState, FailureStage};
 use crate::hud;
 use crate::insertion;
@@ -51,8 +52,11 @@ pub async fn start(app: &AppHandle) {
     // room. Restored on every path out of capture — see `unduck_audio`.
     state.session.duck_audio();
 
+    start_live_typing(app);
+
     if let Err(error) = state.recorder.start() {
         tracing::error!(?error, "microphone capture failed to start");
+        live::cancel(app);
         fail(app, FailureStage::Capture, capture_message(&error));
         return;
     }
@@ -94,12 +98,14 @@ pub async fn stop(app: &AppHandle) {
         Ok(Ok(clip)) => clip,
         Ok(Err(error)) => {
             tracing::warn!(?error, "no usable audio");
+            live::cancel(app);
             state.session.release_audio();
             fail(app, FailureStage::Capture, capture_message(&error));
             return;
         }
         Err(error) => {
             tracing::error!(?error, "audio worker panicked");
+            live::cancel(app);
             state.session.release_audio();
             fail(
                 app,
@@ -118,6 +124,13 @@ pub async fn stop(app: &AppHandle) {
         return;
     };
     events::emit_state(app, &next);
+
+    // Live typing has already put the words in front of the user. If it typed
+    // nothing — or never started — the recording goes through the ordinary
+    // path, so a failed stream never costs a dictation.
+    if live::is_active(app) && deliver_live(app).await {
+        return;
+    }
 
     transcribe_and_deliver(app).await;
 }
@@ -146,6 +159,7 @@ pub async fn cancel(app: &AppHandle) {
     if state.session.state().is_capturing() {
         state.recorder.abort();
     }
+    live::cancel(app);
     state.session.unduck_audio();
 
     let applied = state.session.apply(DictationInput::Cancel);
@@ -165,6 +179,75 @@ pub fn dismiss(app: &AppHandle) {
     if let Ok(next) = state.session.apply(DictationInput::Dismiss) {
         events::emit_state(app, &next);
     }
+}
+
+// --- live typing -----------------------------------------------------------
+
+/// Begin streaming recognition when the engine, the mode and the permissions
+/// allow typing as the user speaks.
+fn start_live_typing(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let settings = state.settings();
+
+    let streams = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().streaming);
+
+    // Rewrite needs the whole recording, and typing needs Accessibility; both
+    // fall back to the ordinary path rather than half-working.
+    if settings.live_typing
+        && streams
+        && settings.mode != processing::ProcessingMode::Rewrite
+        && insertion::ax::is_process_trusted()
+    {
+        live::begin(app, settings.language);
+    }
+}
+
+/// Finish a live-typed dictation. Returns `false` when nothing was typed, so
+/// the caller can transcribe the recording instead.
+async fn deliver_live(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+
+    let finisher = app.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || live::finish(&finisher))
+        .await
+        .ok()
+        .flatten();
+
+    let Some(text) = outcome
+        .map(|outcome| outcome.text)
+        .filter(|text| !text.trim().is_empty())
+    else {
+        return false;
+    };
+
+    tracing::info!(characters = text.len(), "live typing complete");
+
+    // The words are already on screen; walk the machine to Complete so the
+    // HUD, history and shortcut all behave as after any other dictation.
+    for input in [DictationInput::TranscriptReceived, DictationInput::Processed] {
+        match state.session.apply(input) {
+            Ok(next) => events::emit_state(app, &next),
+            Err(_) => return true,
+        }
+    }
+
+    persist(app, &text);
+    // Same promise as every other path: the transcript stays on the clipboard.
+    let _ = insertion::clipboard::set_text(&text);
+    state.session.release_audio();
+
+    if let Ok(next) = state.session.apply(DictationInput::Inserted {
+        transcript: text,
+        method: crate::dictation::machine::InsertionMethod::Typed,
+    }) {
+        events::emit_state(app, &next);
+    }
+    events::emit_bare(app, events::INSERTION_COMPLETE);
+    schedule_hud_dismiss(app.clone());
+    true
 }
 
 // --- pipeline stages -------------------------------------------------------

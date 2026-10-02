@@ -172,5 +172,8 @@ export const setTechnicalVocabulary = (setting: TechnicalVocabulary) =>
 export const setRefineModel = (model: string | null) =>
   invoke<void>("set_refine_model", { model });
 
+export const setLiveTyping = (enabled: boolean) =>
+  invoke<void>("set_live_typing", { enabled });
+
 export const setFormatTechnicalTerms = (enabled: boolean) =>
   invoke<void>("set_format_technical_terms", { enabled });

@@ -13,7 +13,7 @@ https://clide.staraep.fun.
 Read `blueprint.md` (product truth) and `AGENTS.md` (engineering rules) first —
 this file only records *state of the build*, never product decisions.
 
-**Last updated:** 2026-09-04, lossless rewrite, insertion, update-check, and signed v0.1.1 release.
+**Last updated:** 2026-10-01, v2.0.0: local-only, redesign, HUD pill, live typing.
 
 > Update this file at every milestone, not at the end of a session. The user
 > asked for this explicitly and repeatedly. A milestone is: a decision made, a
@@ -91,6 +91,45 @@ on non-software sentences, so that example was deliberately NOT shipped.
 v3 on CoreML + qwen3:4b cleanup via Ollama) — not this codebase.
 Release builds here need `CARGO_PROFILE_RELEASE_STRIP=none`: stripped proc-macro
 dylibs fail to dlopen on macOS 26.
+
+---
+
+# v2.0.0 — REDESIGN, HUD, LIVE TYPING (2026-10-01)
+
+**Redesign (direction A, mono).** Sidebar (`app/Sidebar.tsx`) + one main pane;
+`TitleBar.tsx` removed. Home (`dashboard/Dashboard.tsx`) is a single flat column;
+`SystemCard` only shows when setup is incomplete, otherwise a one-line status.
+Settings `Section` is a two-column row (label left, controls right) divided by
+hairlines. Theme tokens in `styles/theme.css` are mono, light/dark via
+`prefers-color-scheme`; `--color-voice` = ink. Shader is grayscale and inverted
+in dark mode. Verified in a browser against a mocked backend (light + dark).
+
+**HUD.** Pill (340x56) at the bottom of the work area (`hud/mod.rs`, 10 px
+margin); grows to a 400x250 card only for failures. Waveform: 9 round bars,
+dB-scaled so quiet speech moves them. The failure card shows the transcript as
+a draggable chip (HTML5 drag of `text/plain`) so it can be dropped into any
+text field when Accessibility is missing; Copy/Retry/Dismiss remain.
+**Not verified in the real app:** placement on screen, bar feel, and that
+WKWebView drags text into other apps.
+
+**Live typing (new).** Setting `liveTyping` (default on). Apple Speech now
+declares `streaming: true`; `providers/apple/live.rs` runs an on-device
+`SFSpeechAudioBufferRecognitionRequest` on its own thread (ObjC objects are not
+Send), fed by `Recorder::set_tap` (16 kHz i16 samples). `dictation/live.rs`
+types append-only: all but the last 2 words of each hypothesis, everything on
+the final result (`WordTyper`, unit-tested). Typing uses
+`clipboard::type_text_while_held` (no modifier wait, flags cleared) because in
+hold-to-talk the shortcut keys are still down. Pipeline: `start_live_typing`
+in `start()`, `deliver_live` in `stop()`; if nothing was typed it falls through
+to the normal batch path. Disabled in Rewrite mode and without Accessibility.
+Spoken corrections ("scratch that") are NOT applied in live mode (text is
+already on screen) — Settings says so. Other engines are batch only.
+**Not verified with a real voice**: the recogniser/typing path compiles and the
+word-stability logic is tested, but nobody has dictated through it yet.
+
+**Release.** Version 2.0.0. Signed with the Developer ID Application cert
+(`APPLE_SIGNING_IDENTITY`), notarized via the `clide-notary` keychain profile.
+Build with `CARGO_PROFILE_RELEASE_STRIP=none npx tauri build`.
 
 ---
 

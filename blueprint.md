@@ -751,6 +751,10 @@ That distinction will save a frightening amount of development time.
 
 # 19. Visual system
 
+> **Superseded by the user (2026-10-01): the palette is monochrome and the
+> layout is a flat sidebar, not a bento grid. "Blue means voice" below is
+> historical. See `agents.md`.**
+
 The design language is:
 
 **modern web application + light, quiet SaaS surfaces + blue + restraint.**

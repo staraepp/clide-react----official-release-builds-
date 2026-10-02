@@ -26,7 +26,7 @@ export type DictationState =
 
 export type DictationStateKind = DictationState["kind"];
 
-export type InsertionMethod = "accessibility" | "clipboardPaste";
+export type InsertionMethod = "accessibility" | "typed" | "clipboardPaste";
 
 export type DictationBehavior = "hold" | "toggle";
 
@@ -60,6 +60,7 @@ export interface AppSettings {
   spokenPunctuation: boolean;
   technicalVocabulary: TechnicalVocabulary;
   formatTechnicalTerms: boolean;
+  liveTyping: boolean;
   shortcut: string;
   behavior: DictationBehavior;
   mode: ProcessingMode;
@@ -81,6 +82,8 @@ export interface SystemStatus {
   providerReady: boolean;
   /** The selected engine can take a vocabulary hint (local Whisper). */
   providerPrompting: boolean;
+  /** The selected engine can recognise speech as it arrives. */
+  providerStreaming: boolean;
   adHocBuild: boolean;
   ready: boolean;
 }

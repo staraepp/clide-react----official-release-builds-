@@ -24,6 +24,8 @@ pub struct AppState {
     /// Text refinement, kept separate from transcription (blueprint §7).
     pub refiners: RefinerRegistry,
     pub session: DictationSession,
+    /// The live-typing session attached to the dictation in progress, if any.
+    pub live: crate::dictation::live::LiveSlot,
 
     /// Cached copy of the persisted preferences. The database stays the
     /// source of truth; this exists so the audio and shortcut paths never
@@ -72,6 +74,7 @@ impl AppState {
             providers,
             refiners,
             session: DictationSession::new(),
+            live: Mutex::new(None),
             settings: Mutex::new(settings),
             registered_shortcut: Mutex::new(None),
         }

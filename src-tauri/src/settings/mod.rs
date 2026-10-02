@@ -51,6 +51,7 @@ mod keys {
     pub const REFINE_MODEL: &str = "processing.refine_model";
     pub const TECHNICAL_VOCABULARY: &str = "dictation.technical_vocabulary";
     pub const FORMAT_TECHNICAL: &str = "processing.format_technical";
+    pub const LIVE_TYPING: &str = "dictation.live_typing";
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -86,6 +87,10 @@ pub struct AppSettings {
     /// Wrap spoken file paths in backticks. Off by default: backticks are
     /// literal text, and harmful in a terminal.
     pub format_technical_terms: bool,
+    /// Type words into the focused app as they are spoken, on engines that
+    /// can stream. Skips Rewrite and spoken corrections, which need the whole
+    /// recording.
+    pub live_typing: bool,
     pub onboarding_complete: bool,
 }
 
@@ -107,6 +112,7 @@ impl AppSettings {
             refine_model: None,
             technical_vocabulary: TechnicalVocabulary::default(),
             format_technical_terms: false,
+            live_typing: true,
             onboarding_complete: false,
         }
     }
@@ -171,6 +177,10 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
             .ok()
             .flatten()
             .unwrap_or(defaults.format_technical_terms),
+        live_typing: kv::get(connection, keys::LIVE_TYPING)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.live_typing),
         visual_intensity: kv::get(connection, keys::INTENSITY)
             .ok()
             .flatten()
@@ -234,6 +244,7 @@ pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result
         keys::FORMAT_TECHNICAL,
         &settings.format_technical_terms,
     )?;
+    kv::set(connection, keys::LIVE_TYPING, &settings.live_typing)?;
     kv::set(connection, keys::ONBOARDING, &settings.onboarding_complete)?;
     Ok(())
 }

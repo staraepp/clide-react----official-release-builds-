@@ -111,6 +111,7 @@ pub fn run() {
             commands::settings::set_technical_vocabulary,
             commands::settings::set_refine_model,
             commands::settings::set_format_technical_terms,
+            commands::settings::set_live_typing,
             commands::settings::set_refine_style,
             commands::settings::get_about,
             commands::settings::set_language,

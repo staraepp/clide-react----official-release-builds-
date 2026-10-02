@@ -33,6 +33,9 @@ pub struct SystemStatus {
     /// The selected engine accepts a vocabulary hint, so technical vocabulary
     /// can actually take effect.
     pub provider_prompting: bool,
+    /// The selected engine can recognise speech as it arrives, so live typing
+    /// can take effect.
+    pub provider_streaming: bool,
     /// True when this build is ad-hoc signed, which makes macOS drop the
     /// Accessibility grant on every rebuild even though System Settings still
     /// shows the switch on. Lets the UI explain the contradiction.
@@ -69,6 +72,10 @@ pub fn get_system_status(app: AppHandle) -> SystemStatus {
         .providers
         .get(&settings.provider_id)
         .is_some_and(|provider| provider.capabilities().prompting);
+    let provider_streaming = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().streaming);
     let shortcut_registered = registered_shortcut.is_some();
 
     SystemStatus {
@@ -84,6 +91,7 @@ pub fn get_system_status(app: AppHandle) -> SystemStatus {
         model_name,
         provider_ready,
         provider_prompting,
+        provider_streaming,
         ad_hoc_build: crate::permissions::is_ad_hoc(),
     }
 }
@@ -276,6 +284,15 @@ pub fn set_technical_vocabulary(
 pub fn set_format_technical_terms(app: AppHandle, enabled: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
     state.update_settings(|settings| settings.format_technical_terms = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Type words as they are spoken, on engines that can stream.
+#[tauri::command]
+pub fn set_live_typing(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.live_typing = enabled)?;
     events::emit_bare(&app, events::SETTINGS_CHANGED);
     Ok(())
 }

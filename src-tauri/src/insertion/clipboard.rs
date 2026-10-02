@@ -330,6 +330,22 @@ pub fn type_text(text: &str) -> Result<(), String> {
     // these keystrokes and turn typed characters into shortcuts.
     wait_for_modifiers_to_clear();
 
+    post_unicode_keystrokes(text)
+}
+
+/// Type while the user may still be holding the dictation shortcut.
+///
+/// Live typing cannot wait for the modifiers to clear: in hold-to-talk they
+/// are down for the whole recording. Every event carries an empty flag set, so
+/// the held keys are not applied to the characters.
+pub fn type_text_while_held(text: &str) -> Result<(), String> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    post_unicode_keystrokes(text)
+}
+
+fn post_unicode_keystrokes(text: &str) -> Result<(), String> {
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "could not create a keyboard event source".to_string())?;
 

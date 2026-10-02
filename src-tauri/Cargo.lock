@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "clide"
-version = "0.1.2"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -607,6 +607,7 @@ dependencies = [
  "futures-util",
  "hound",
  "objc2",
+ "objc2-avf-audio",
  "objc2-foundation",
  "objc2-speech",
  "parakeet-rs",

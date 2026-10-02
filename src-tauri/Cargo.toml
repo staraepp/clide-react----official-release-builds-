@@ -1,6 +1,6 @@
 [package]
 name = "clide"
-version = "0.1.2"
+version = "2.0.0"
 description = "Clide — system-wide dictation for macOS"
 edition = "2021"
 rust-version = "1.77"
@@ -24,6 +24,7 @@ foundation-models = { version = "0.11", features = ["macos_26_0", "async"] }
 # Apple's built-in speech recognition.
 objc2-speech = "0.3"
 objc2-foundation = "0.3"
+objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioFormat", "AVAudioTypes"] }
 objc2 = "0.6"
 block2 = "0.6"
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }

@@ -3,6 +3,7 @@
 
 pub mod events;
 pub mod fallback;
+pub mod live;
 pub mod machine;
 pub mod pipeline;
 pub mod session;
