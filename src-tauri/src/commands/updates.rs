@@ -1,32 +1,27 @@
-//! GitHub release awareness.
+//! Updates.
 //!
-//! This intentionally checks and links rather than downloading or executing a
-//! package. A secure self-updater needs Tauri update-signing keys plus a
-//! Developer ID/notarized public release; silently installing an unsigned DMG
-//! would weaken the platform protections Clide depends on.
+//! Releases are published on GitHub with a signed `latest.json`. Clide checks
+//! it at most once a day, tells the user when a newer version exists, and
+//! installs it only when they press the button.
+//!
+//! The package is verified against the public key compiled into the app
+//! (`plugins.updater.pubkey` in `tauri.conf.json`), so a download that was not
+//! signed with Clide's private key is rejected no matter where it came from.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
 use crate::database::{kv, now_ms};
 use crate::state::AppState;
 
-const RELEASE_API: &str = "https://api.github.com/repos/staraepp/clide_stt/releases/latest";
-const RELEASES_URL: &str = "https://github.com/staraepp/clide_stt/releases/latest";
 const CACHE_KEY: &str = "updates.latest_release";
 const CHECK_INTERVAL_MS: i64 = 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct CachedRelease {
     version: String,
-    url: String,
     checked_at: i64,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    html_url: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -35,7 +30,6 @@ pub struct UpdateStatus {
     current_version: String,
     latest_version: Option<String>,
     update_available: bool,
-    release_url: String,
     checked_at: Option<i64>,
 }
 
@@ -66,9 +60,6 @@ fn status(current: &str, cached: Option<&CachedRelease>) -> UpdateStatus {
             .map(|latest| is_newer(current, latest))
             .unwrap_or(false),
         latest_version,
-        release_url: cached
-            .map(|release| release.url.clone())
-            .unwrap_or_else(|| RELEASES_URL.to_string()),
         checked_at: cached.map(|release| release.checked_at),
     }
 }
@@ -89,36 +80,47 @@ pub async fn check_for_updates(app: AppHandle, force: bool) -> Result<UpdateStat
         return Ok(status(current, cached.as_ref()));
     }
 
-    let response = state
-        .http
-        .get(RELEASE_API)
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .send()
+    let found = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
         .await
-        .map_err(|error| format!("Could not reach GitHub: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("GitHub could not provide the latest release: {error}"))?
-        .json::<GitHubRelease>()
-        .await
-        .map_err(|error| format!("GitHub returned an unreadable release: {error}"))?;
+        .map_err(|error| format!("Could not check for updates: {error}"))?;
 
+    // No newer release is the same as "latest is what I already have".
     let release = CachedRelease {
-        version: normalize_version(&response.tag_name).to_string(),
-        url: response.html_url,
+        version: found
+            .map(|update| update.version)
+            .unwrap_or_else(|| current.to_string()),
         checked_at: now_ms(),
     };
-
-    // Never replace a valid cache with an unparsable tag.
-    semver::Version::parse(&release.version).map_err(|_| {
-        format!(
-            "GitHub's latest tag is not a version: {}",
-            response.tag_name
-        )
-    })?;
     kv::set(&state.db.lock(), CACHE_KEY, &release).map_err(|error| error.to_string())?;
 
     Ok(status(current, Some(&release)))
+}
+
+/// Download the newer version, verify it, install it, and relaunch.
+///
+/// Only ever called from the button in Settings: Clide never replaces itself
+/// without being asked.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| format!("Could not check for updates: {error}"))?
+        .ok_or_else(|| "clide is already up to date.".to_string())?;
+
+    tracing::info!(version = %update.version, "installing update");
+
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("The update could not be installed: {error}"))?;
+
+    app.restart()
 }
 
 #[cfg(test)]
@@ -137,12 +139,20 @@ mod tests {
     fn cached_release_becomes_a_frontend_status() {
         let cached = CachedRelease {
             version: "v0.2.0".into(),
-            url: "https://example.com/release".into(),
             checked_at: 42,
         };
         let result = status("0.1.0", Some(&cached));
         assert!(result.update_available);
         assert_eq!(result.latest_version.as_deref(), Some("0.2.0"));
         assert_eq!(result.checked_at, Some(42));
+    }
+
+    #[test]
+    fn the_current_version_is_never_an_update() {
+        let cached = CachedRelease {
+            version: "2.0.0".into(),
+            checked_at: 1,
+        };
+        assert!(!status("2.0.0", Some(&cached)).update_available);
     }
 }

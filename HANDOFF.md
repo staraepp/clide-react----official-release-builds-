@@ -13,11 +13,147 @@ https://clide.staraep.fun.
 Read `blueprint.md` (product truth) and `AGENTS.md` (engineering rules) first —
 this file only records *state of the build*, never product decisions.
 
-**Last updated:** 2026-09-04, lossless rewrite, insertion, update-check, and signed v0.1.1 release.
+**Last updated:** 2026-10-01, v2.0.0: local-only, redesign, HUD pill, live typing.
 
 > Update this file at every milestone, not at the end of a session. The user
 > asked for this explicitly and repeatedly. A milestone is: a decision made, a
 > file group rewritten, a build passing or failing, a test run.
+
+---
+
+# LOCAL-ONLY PIVOT (2026-10-01) — Phase 1 of 3 done
+
+User direction: Clide becomes 100% local, Whisperflow-like (voice backtracking
+plus a polishing model), and "agent techier" (technical vocabulary and spoken
+file paths as code in dev apps). Full plan: `~/.claude/plans/cheeky-tickling-meadow.md`.
+
+**Phase 1 (done): cloud and BYOK removed.** Deleted `providers/{groq,openai,
+deepgram,elevenlabs,assemblyai}`, `providers/http.rs`, `openai_compatible.rs`,
+`credentials/`, `refine/cloud.rs`, and the frontend key UI. `TranscriptionProvider`
+lost `credential_requirement`, `validate_credentials` and the `credential`
+argument. `FallbackPolicy::AnyConfigured` is gone. Apple Speech stays (on-device,
+the only engine usable on a fresh install) and is now the default provider.
+`settings::reconcile` repairs old databases that still select `groq` or a cloud
+rewriter. `SystemStatus.providerReady` replaces `providerConfigured` /
+`providerNeedsKey`. This deliberately deviates from blueprint §10–§14 on the
+user's explicit instruction. Verified: `cargo test` 185 passed / 3 ignored,
+clippy `-D warnings` clean, `tsc` + `vite build` clean, and onboarding /
+dashboard / Settings / Models rendered in a browser against a mocked backend.
+**Not verified:** the packaged app and a real dictation after the change.
+`credentials.json` from older installs is left on disk, unused.
+
+**Phase 2 (done): backtrack.** `processing/backtrack.rs` runs first in
+`dictation/pipeline.rs::process()` on the full raw transcript: "scratch that" /
+"strike that" delete back to the previous comma or sentence end; "scratch/
+delete/undo (the) last sentence" delete back to the previous sentence end. Each
+correction emits `dictation:correction-applied` and the HUD shows "corrected".
+Scratching everything cancels the dictation instead of inserting the raw text.
+`polish.rs::collapse_phrase_repeats` collapses an immediate 2-4 word repeat
+("I want it I want it to" -> "I want it to"); `RefineStyle` instructions now say
+to keep only the final version of a restart. Known limit: a sentence that
+really contains "scratch that" is treated as a command. Half-spoken words
+("t-") are NOT handled deterministically — that is the Rewrite model's job.
+Verified: `cargo test` 202 passed, clippy clean, `tsc` + `vite build` clean.
+Not verified: a spoken run on real hardware, and the refiner's behaviour on
+real restarts (needs Apple Intelligence).
+
+**Phase 3 (done): technical context.** New `context/` module: bundle-id
+allowlist (editors, terminals, agent apps, browsers) plus
+`TECHNICAL_VOCABULARY`, and `vocabulary_prompt()` which feeds
+`TranscriptionRequest.prompt` in `dictation/pipeline.rs::transcribe()`. Setting
+`technicalVocabulary`: auto (dev apps and browsers) / always / off. **Only local
+Whisper has `prompting`**, so on Apple Speech or Parakeet this is a no-op and
+Settings says so (`SystemStatus.providerPrompting`). Opt-in setting
+`formatTechnicalTerms` (default OFF) runs `processing/techformat.rs` after
+backtrack and before Polish: "src slash app dot tsx" -> `` `src/app.tsx` ``, and
+filenames/paths are wrapped in backticks. It is off by default because backticks
+are literal characters (shell command substitution in a terminal). Polish was
+also fixed so `app.tsx` is no longer recapitalised to `app.Tsx` and code spans
+are never recapitalised; Rewrite is told to copy backtick text exactly.
+No per-app profiles yet — one global setting. Verified: `cargo test` 221
+passed, clippy clean, `tsc` + `vite build` clean, Settings section rendered in
+a browser against a mocked backend. Not verified: real dictation into a
+terminal/editor/browser, and Whisper actually honouring the glossary prompt.
+
+**Update (2026-10-01, later): quality pass.** Whisper context is now cached
+across dictations (`providers/local/whisper.rs`, was ~10 s reload per run).
+`processing/names.rs` always rewrites Clyde/cladcode-style variants to Clide /
+Claude Code (a real "Clyde" is rewritten too, on purpose). The Whisper prompt
+always carries "Names: Clide, Claude Code." New refiner `refine/ollama.rs`
+talks to a local Ollama on 127.0.0.1:11434 (the only non-model/non-update
+network traffic allowed, loopback only); model is a setting (`refineModel`,
+automatic = best installed, qwen3 instruct preferred). Rewrite instructions
+fix small grammar and software-term mishearings only in software talk.
+Measured on this Mac: qwen3:4b-instruct and gemma4:e4b both fail to repair
+"signing this up" -> "signing this app" reliably, and the 4B model false-fires
+on non-software sentences, so that example was deliberately NOT shipped.
+"Clide Local" (~/Applications) is a separate Swift app (FluidAudio Parakeet TDT
+v3 on CoreML + qwen3:4b cleanup via Ollama) — not this codebase.
+Release builds here need `CARGO_PROFILE_RELEASE_STRIP=none`: stripped proc-macro
+dylibs fail to dlopen on macOS 26.
+
+---
+
+# v2.0.0 — REDESIGN, HUD, LIVE TYPING (2026-10-01)
+
+**Redesign (direction A, mono).** Sidebar (`app/Sidebar.tsx`) + one main pane;
+`TitleBar.tsx` removed. Home (`dashboard/Dashboard.tsx`) is a single flat column;
+`SystemCard` only shows when setup is incomplete, otherwise a one-line status.
+Settings `Section` is a two-column row (label left, controls right) divided by
+hairlines. Theme tokens in `styles/theme.css` are mono, light/dark via
+`prefers-color-scheme`; `--color-voice` = ink. Shader is grayscale and inverted
+in dark mode. Verified in a browser against a mocked backend (light + dark).
+
+**HUD.** Pill (340x56) at the bottom of the work area (`hud/mod.rs`, 10 px
+margin); grows to a 400x250 card only for failures. Waveform: 9 round bars,
+dB-scaled so quiet speech moves them. The failure card shows the transcript as
+a draggable chip (HTML5 drag of `text/plain`) so it can be dropped into any
+text field when Accessibility is missing; Copy/Retry/Dismiss remain.
+**Not verified in the real app:** placement on screen, bar feel, and that
+WKWebView drags text into other apps.
+
+**Live typing (new).** Setting `liveTyping` (default on). Apple Speech now
+declares `streaming: true`; `providers/apple/live.rs` runs an on-device
+`SFSpeechAudioBufferRecognitionRequest` on its own thread (ObjC objects are not
+Send), fed by `Recorder::set_tap` (16 kHz i16 samples). `dictation/live.rs`
+types append-only: all but the last 2 words of each hypothesis, everything on
+the final result (`WordTyper`, unit-tested). Typing uses
+`clipboard::type_text_while_held` (no modifier wait, flags cleared) because in
+hold-to-talk the shortcut keys are still down. Pipeline: `start_live_typing`
+in `start()`, `deliver_live` in `stop()`; if nothing was typed it falls through
+to the normal batch path. Disabled in Rewrite mode and without Accessibility.
+Spoken corrections ("scratch that") are NOT applied in live mode (text is
+already on screen) — Settings says so. Other engines are batch only.
+**Not verified with a real voice**: the recogniser/typing path compiles and the
+word-stability logic is tested, but nobody has dictated through it yet.
+
+**Auto-update (new).** `commands/updates.rs` uses `tauri-plugin-updater`.
+`check_for_updates` (cached 24 h, also run by the Sidebar on launch) asks
+`https://github.com/staraepp/clide_stt/releases/latest/download/latest.json`;
+`install_update` downloads, verifies against the pubkey in `tauri.conf.json`
+(`plugins.updater`), installs and relaunches. Only on the user's button press.
+The signing key pair is `~/.tauri/clide-updater.key` (+ `.pub`, no password) —
+**back it up; losing it means no existing install can ever auto-update again.**
+Per release: build with `TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/clide-updater.key)"
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""`, notarize+staple the DMG and app, re-tar the
+stapled app (`tar -czf clide.app.tar.gz clide.app`), re-sign it
+(`npx tauri signer sign <tar.gz>`), run `node scripts/make-update-manifest.mjs`,
+and upload `clide.app.tar.gz` + `latest.json` + the DMG to release `v<version>`.
+2.0.0 is the first updater-capable version; 0.1.x installs must update by hand.
+Not verified end to end: no release with a `latest.json` exists yet.
+
+**Misc 2.0.0 changes.** Browser links and the opener plugin were removed.
+Silence is rejected before transcription (`audio/speech.rs`) and phantom
+transcripts ("Thank you.") are dropped. The HUD waveform auto-scales to the
+speaker. Dragging the failure chip sends the main window to the back
+(`hud::keep_main_window_behind`) — unverified in the real app. New dark icon
+(`assets/icon.svg`, rendered to `src-tauri/icons`); the DMG background is a dark
+2400x1500 pt canvas in a multi-res TIFF (`assets/dmg-background.html` +
+`scripts/make-dmg-background.sh`) so enlarging the window never shows white.
+
+**Release.** Version 2.0.0. Signed with the Developer ID Application cert
+(`APPLE_SIGNING_IDENTITY`), notarized via the `clide-notary` keychain profile.
+Build with `CARGO_PROFILE_RELEASE_STRIP=none npx tauri build`.
 
 ---
 

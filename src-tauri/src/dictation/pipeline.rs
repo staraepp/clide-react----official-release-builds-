@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager};
 use crate::audio::AudioError;
 use crate::database::{now_ms, transcripts};
 use crate::dictation::events;
+use crate::dictation::live;
 use crate::dictation::machine::{DictationInput, DictationState, FailureStage};
 use crate::hud;
 use crate::insertion;
@@ -51,8 +52,11 @@ pub async fn start(app: &AppHandle) {
     // room. Restored on every path out of capture — see `unduck_audio`.
     state.session.duck_audio();
 
+    start_live_typing(app);
+
     if let Err(error) = state.recorder.start() {
         tracing::error!(?error, "microphone capture failed to start");
+        live::cancel(app);
         fail(app, FailureStage::Capture, capture_message(&error));
         return;
     }
@@ -94,12 +98,14 @@ pub async fn stop(app: &AppHandle) {
         Ok(Ok(clip)) => clip,
         Ok(Err(error)) => {
             tracing::warn!(?error, "no usable audio");
+            live::cancel(app);
             state.session.release_audio();
             fail(app, FailureStage::Capture, capture_message(&error));
             return;
         }
         Err(error) => {
             tracing::error!(?error, "audio worker panicked");
+            live::cancel(app);
             state.session.release_audio();
             fail(
                 app,
@@ -118,6 +124,13 @@ pub async fn stop(app: &AppHandle) {
         return;
     };
     events::emit_state(app, &next);
+
+    // Live typing has already put the words in front of the user. If it typed
+    // nothing — or never started — the recording goes through the ordinary
+    // path, so a failed stream never costs a dictation.
+    if live::is_active(app) && deliver_live(app).await {
+        return;
+    }
 
     transcribe_and_deliver(app).await;
 }
@@ -146,6 +159,7 @@ pub async fn cancel(app: &AppHandle) {
     if state.session.state().is_capturing() {
         state.recorder.abort();
     }
+    live::cancel(app);
     state.session.unduck_audio();
 
     let applied = state.session.apply(DictationInput::Cancel);
@@ -165,6 +179,75 @@ pub fn dismiss(app: &AppHandle) {
     if let Ok(next) = state.session.apply(DictationInput::Dismiss) {
         events::emit_state(app, &next);
     }
+}
+
+// --- live typing -----------------------------------------------------------
+
+/// Begin streaming recognition when the engine, the mode and the permissions
+/// allow typing as the user speaks.
+fn start_live_typing(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let settings = state.settings();
+
+    let streams = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().streaming);
+
+    // Rewrite needs the whole recording, and typing needs Accessibility; both
+    // fall back to the ordinary path rather than half-working.
+    if settings.live_typing
+        && streams
+        && settings.mode != processing::ProcessingMode::Rewrite
+        && insertion::ax::is_process_trusted()
+    {
+        live::begin(app, settings.language);
+    }
+}
+
+/// Finish a live-typed dictation. Returns `false` when nothing was typed, so
+/// the caller can transcribe the recording instead.
+async fn deliver_live(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+
+    let finisher = app.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || live::finish(&finisher))
+        .await
+        .ok()
+        .flatten();
+
+    let Some(text) = outcome
+        .map(|outcome| outcome.text)
+        .filter(|text| !text.trim().is_empty())
+    else {
+        return false;
+    };
+
+    tracing::info!(characters = text.len(), "live typing complete");
+
+    // The words are already on screen; walk the machine to Complete so the
+    // HUD, history and shortcut all behave as after any other dictation.
+    for input in [DictationInput::TranscriptReceived, DictationInput::Processed] {
+        match state.session.apply(input) {
+            Ok(next) => events::emit_state(app, &next),
+            Err(_) => return true,
+        }
+    }
+
+    persist(app, &text);
+    // Same promise as every other path: the transcript stays on the clipboard.
+    let _ = insertion::clipboard::set_text(&text);
+    state.session.release_audio();
+
+    if let Ok(next) = state.session.apply(DictationInput::Inserted {
+        transcript: text,
+        method: crate::dictation::machine::InsertionMethod::Typed,
+    }) {
+        events::emit_state(app, &next);
+    }
+    events::emit_bare(app, events::INSERTION_COMPLETE);
+    schedule_hud_dismiss(app.clone());
+    true
 }
 
 // --- pipeline stages -------------------------------------------------------
@@ -192,27 +275,14 @@ async fn try_fallback(
     failed_provider: &str,
     request: &TranscriptionRequest,
 ) -> Option<crate::providers::Transcription> {
-    let candidates = crate::dictation::fallback::candidates(
-        &state.providers,
-        &state.credentials,
-        policy,
-        failed_provider,
-    );
+    let candidates =
+        crate::dictation::fallback::candidates(&state.providers, policy, failed_provider);
 
     for candidate in candidates {
-        let credential = state
-            .credentials
-            .read(candidate.provider.id())
-            .ok()
-            .flatten();
-
         let mut attempt = request.clone();
         attempt.model = candidate.model.clone();
 
-        match candidate
-            .provider
-            .transcribe(attempt, credential.as_deref())
-            .await
+        match candidate.provider.transcribe(attempt).await
         {
             Ok(result) => {
                 tracing::info!(
@@ -259,13 +329,21 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
-    let (provider_id, model_id, language, policy) = {
+    // Silence, a click or a breath. Speech models answer these with invented
+    // text ("Thank you."), so they never get to see them.
+    if pending.speech < crate::audio::speech::MIN_SPEECH {
+        fail_transcription(app, NO_SPEECH_MESSAGE);
+        return None;
+    }
+
+    let (provider_id, model_id, language, policy, vocabulary) = {
         let settings = state.settings();
         (
             settings.provider_id,
             settings.model_id,
             settings.language,
             settings.fallback,
+            settings.technical_vocabulary,
         )
     };
 
@@ -278,31 +356,28 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
         return None;
     };
 
-    // The secret lives only inside this scope — it is never logged, stored in
-    // the session, or returned to the frontend.
-    let credential = match state.credentials.read(&provider_id) {
-        Ok(value) => value,
-        Err(error) => {
-            fail(app, FailureStage::Transcription, error.to_string());
-            return None;
-        }
-    };
+    let target = state.session.target();
+    let prompt = crate::context::vocabulary_prompt(
+        vocabulary,
+        &target,
+        provider.capabilities().prompting,
+    );
+    if prompt.is_some() {
+        tracing::info!(app = target.label(), "technical vocabulary applied");
+    }
 
     let request = TranscriptionRequest {
         audio: AudioClip::wav(pending.path, pending.duration_secs),
         model: model_id,
         language,
-        prompt: None,
+        prompt,
     };
 
-    let first_attempt = provider
-        .transcribe(request.clone(), credential.as_deref())
-        .await;
+    let first_attempt = provider.transcribe(request.clone()).await;
 
     // Only reach for a substitute once the chosen engine has actually failed,
     // and never silently: whatever runs is named in the HUD. See
-    // `dictation::fallback` for why local engines are safe by default and
-    // cloud ones are not.
+    // `dictation::fallback`.
     let outcome = match first_attempt {
         Ok(result) => Ok(result),
         Err(original) => match try_fallback(app, &state, policy, &provider_id, &request).await {
@@ -312,6 +387,11 @@ async fn transcribe(app: &AppHandle) -> Option<String> {
     };
 
     match outcome {
+        Ok(result) if crate::audio::speech::is_phantom_transcript(&result.text, pending.speech) => {
+            tracing::info!(text = %result.text, "discarded a transcript the model invented from near-silence");
+            fail_transcription(app, NO_SPEECH_MESSAGE);
+            None
+        }
         Ok(result) => {
             tracing::info!(
                 provider = %result.provider,
@@ -363,20 +443,61 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
     events::emit_state(app, &next);
     events::emit_bare(app, events::PROCESSING_STARTED);
 
-    let (mode, style, engines, spoken) = {
+    let (mode, style, engines, spoken, format_technical, refine_model) = {
         let settings = state.settings();
         (
             settings.mode,
             settings.refine_style,
             settings.refine_engines,
             settings.spoken_punctuation,
+            settings.format_technical_terms,
+            settings.refine_model,
         )
+    };
+
+    // Spoken corrections come first: a command phrase is never meant to be
+    // typed, and everything after this point should see the text the user
+    // actually meant.
+    let corrected = processing::backtrack::apply_backtracking(&raw);
+    if corrected.corrections > 0 {
+        tracing::info!(count = corrected.corrections, "spoken corrections applied");
+        events::emit(
+            app,
+            events::CORRECTION_APPLIED,
+            events::CorrectionPayload {
+                count: corrected.corrections,
+            },
+        );
+    }
+
+    // The user scratched everything they said. There is nothing to insert, and
+    // `processing::process` would helpfully resurrect the raw text, so stop
+    // here and treat it as a cancelled dictation.
+    if corrected.text.trim().is_empty() && corrected.corrections > 0 {
+        if let Ok(next) = state.session.apply(DictationInput::Cancel) {
+            events::emit_state(app, &next);
+        }
+        state.session.release_audio();
+        hud::hide(app);
+        return None;
+    }
+
+    // Spelling of the names Clide is asked to write most. Always on: it needs
+    // no model and is the same in every mode.
+    let corrected_text = processing::names::apply_known_names(&corrected.text);
+
+    // Opt-in: spoken paths become code spans before Polish, which knows to
+    // leave them alone, and before Rewrite, which is told to copy them.
+    let raw = if format_technical {
+        processing::techformat::format_technical(&corrected_text)
+    } else {
+        corrected_text
     };
 
     match processing::process(mode, &raw, spoken) {
         Ok(text) => {
             let text = if mode == processing::ProcessingMode::Rewrite {
-                refine_text(app, text, style, &engines).await
+                refine_text(app, text, style, &engines, refine_model).await
             } else {
                 text
             };
@@ -417,8 +538,17 @@ async fn refine_text(
     text: String,
     style: RefineStyle,
     engines: &[String],
+    model: Option<String>,
 ) -> String {
     let state = app.state::<AppState>();
+
+    // Only the app's name, and never Clide itself: context level 1.
+    let target = state.session.target();
+    let app_name = if target.is_clide() {
+        None
+    } else {
+        target.app_name.clone()
+    };
 
     let Some(refiner) = state.refiners.first_enabled(engines) else {
         tracing::debug!("rewrite requested but no enabled refinement engine can run");
@@ -429,6 +559,8 @@ async fn refine_text(
         .refine(RefineRequest {
             text: text.clone(),
             style,
+            model,
+            app: app_name,
         })
         .await
     {
@@ -547,6 +679,52 @@ async fn deliver(app: &AppHandle, text: String) {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/// How long the "no speech" notice stays before it clears itself.
+const NO_SPEECH_LINGER: Duration = Duration::from_millis(2800);
+
+const NO_SPEECH_MESSAGE: &str = "No speech was heard. Check that the right microphone is selected.";
+
+/// Settle on a transcription failure that a retry cannot fix.
+fn fail_transcription(app: &AppHandle, message: &str) {
+    let state = app.state::<AppState>();
+    if let Ok(next) = state
+        .session
+        .apply(DictationInput::transcription_failure(message, false))
+    {
+        events::emit_state(app, &next);
+    }
+    events::emit(
+        app,
+        events::TRANSCRIPTION_FAILED,
+        events::FailurePayload {
+            message: message.to_string(),
+            retryable: false,
+        },
+    );
+    hud::show(app);
+    schedule_failure_dismiss(app.clone());
+}
+
+/// An accidental tap should not leave a card waiting to be closed.
+fn schedule_failure_dismiss(app: AppHandle) {
+    let epoch = app.state::<AppState>().session.epoch();
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(NO_SPEECH_LINGER).await;
+
+        let state = app.state::<AppState>();
+        if state.session.epoch() != epoch {
+            return;
+        }
+        if matches!(
+            state.session.state(),
+            DictationState::TranscriptionFailed { .. }
+        ) {
+            dismiss(&app);
+        }
+    });
+}
 
 fn fail(app: &AppHandle, stage: FailureStage, message: impl Into<String>) {
     // Whatever went wrong, the user's volume is not part of it.

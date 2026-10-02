@@ -28,8 +28,7 @@ export function DictationCard({
 
   return (
     <Card
-      hero
-      className="col-span-12 row-span-2 flex flex-col p-5 lg:col-span-8"
+      className="flex flex-col py-6"
     >
       <CardHeader
         label="Dictation"

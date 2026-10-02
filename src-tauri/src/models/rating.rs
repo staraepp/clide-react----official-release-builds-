@@ -5,8 +5,7 @@
 //! Every score here is derived from something real: the model's declared speed
 //! and quality class, its actual size on disk, and this Mac's measured memory
 //! and chip. Nothing is invented, and nothing is a popularity score — Clide has
-//! no telemetry and could not know one. A cloud model's speed rating reflects
-//! its class, not a benchmark Clide has not run.
+//! no telemetry and could not know one.
 //!
 //! `blueprint.md` and `AGENTS.md` both forbid inventing statistics. If a rating
 //! cannot be derived from a measured or declared fact, it does not belong here.
@@ -122,21 +121,6 @@ pub fn rate_local(entry: &CatalogEntry, hardware: &Hardware) -> Rating {
         overall: round_half((accuracy * 0.6 + speed * 0.4).clamp(0.5, 5.0)),
         fit,
         required_memory_bytes: required,
-    }
-}
-
-/// Rate a cloud model. Hardware is irrelevant; the network is the bottleneck.
-pub fn rate_cloud(speed: SpeedClass, quality: QualityClass) -> Rating {
-    let accuracy = accuracy_stars(quality);
-    let speed_value = speed_stars(speed);
-
-    Rating {
-        accuracy,
-        speed: speed_value,
-        overall: round_half((accuracy * 0.6 + speed_value * 0.4).clamp(0.5, 5.0)),
-        // A cloud model always "fits" — it does not run here at all.
-        fit: Fit::Great,
-        required_memory_bytes: 0,
     }
 }
 

@@ -14,7 +14,7 @@ use crate::models::{catalog, Engine, ModelStore};
 use crate::models::catalog::ParakeetArch;
 use crate::providers::error::ProviderError;
 use crate::providers::traits::{
-    Capabilities, CredentialRequirement, ModelInfo, Transcription, TranscriptionProvider,
+    Capabilities, ModelInfo, Transcription, TranscriptionProvider,
     TranscriptionRequest,
 };
 
@@ -100,24 +100,9 @@ impl TranscriptionProvider for LocalParakeetProvider {
         "parakeet-tdt-0.6b-v3"
     }
 
-    fn credential_requirement(&self) -> CredentialRequirement {
-        CredentialRequirement::None
-    }
-
-    async fn validate_credentials(&self, _credential: Option<&str>) -> Result<(), ProviderError> {
-        if self.models().is_empty() {
-            return Err(ProviderError::BadRequest {
-                provider: PROVIDER_ID,
-                detail: "Parakeet is not downloaded yet".into(),
-            });
-        }
-        Ok(())
-    }
-
     async fn transcribe(
         &self,
         request: TranscriptionRequest,
-        _credential: Option<&str>,
     ) -> Result<Transcription, ProviderError> {
         let (directory, arch) = self.resolve(&request.model)?;
         let audio = read_wav_as_mono_f32(request.audio.path())?;
@@ -195,12 +180,8 @@ mod tests {
     }
 
     #[test]
-    fn parakeet_needs_no_credential() {
-        let (local, _dir) = provider("credential");
-        assert!(matches!(
-            local.credential_requirement(),
-            CredentialRequirement::None
-        ));
+    fn parakeet_declares_itself_local() {
+        let (local, _dir) = provider("local");
         assert!(local.capabilities().local);
     }
 
@@ -236,7 +217,7 @@ mod tests {
             language: None,
             prompt: None,
         };
-        let error = local.transcribe(request, None).await.unwrap_err();
+        let error = local.transcribe(request).await.unwrap_err();
         assert!(error.to_string().contains("not downloaded"), "got: {error}");
     }
 }

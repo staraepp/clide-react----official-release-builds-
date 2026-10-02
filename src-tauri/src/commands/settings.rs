@@ -7,7 +7,6 @@ use crate::dictation::events;
 use crate::dictation::machine::DictationBehavior;
 use crate::permissions::{self, PermissionSnapshot};
 use crate::processing::ProcessingMode;
-use crate::providers::CredentialRequirement;
 use crate::settings::{AppSettings, VisualIntensity};
 use crate::shortcuts;
 use crate::state::AppState;
@@ -28,10 +27,15 @@ pub struct SystemStatus {
     pub shortcut_registered: bool,
     pub provider_name: String,
     pub model_name: String,
-    pub provider_configured: bool,
-    /// Whether this provider takes an API key at all. Without it the UI cannot
-    /// tell "key stored" apart from "never needed one".
-    pub provider_needs_key: bool,
+    /// Whether the selected engine can run the selected model right now. False
+    /// when the chosen local model has not been downloaded.
+    pub provider_ready: bool,
+    /// The selected engine accepts a vocabulary hint, so technical vocabulary
+    /// can actually take effect.
+    pub provider_prompting: bool,
+    /// The selected engine can recognise speech as it arrives, so live typing
+    /// can take effect.
+    pub provider_streaming: bool,
     /// True when this build is ad-hoc signed, which makes macOS drop the
     /// Accessibility grant on every rebuild even though System Settings still
     /// shows the switch on. Lets the UI explain the contradiction.
@@ -60,35 +64,34 @@ pub fn get_system_status(app: AppHandle) -> SystemStatus {
         None => (settings.provider_id.clone(), settings.model_id.clone()),
     };
 
-    // A provider that needs no credential is always "configured". Asking the
-    // credential store about Apple Speech or a local engine would report a
-    // missing key for something that never wanted one.
-    let (provider_configured, provider_needs_key) =
-        match state.providers.get(&settings.provider_id) {
-            Some(provider) => match provider.credential_requirement() {
-                CredentialRequirement::None => (true, false),
-                CredentialRequirement::ApiKey { .. } => (
-                    state.credentials.is_configured(&settings.provider_id),
-                    true,
-                ),
-            },
-            None => (false, true),
-        };
+    let provider_ready = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.has_model(&settings.model_id));
+    let provider_prompting = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().prompting);
+    let provider_streaming = state
+        .providers
+        .get(&settings.provider_id)
+        .is_some_and(|provider| provider.capabilities().streaming);
     let shortcut_registered = registered_shortcut.is_some();
 
     SystemStatus {
         ready: permissions.can_capture()
             && permissions.can_insert()
             && shortcut_registered
-            && provider_configured,
+            && provider_ready,
         permissions,
         settings,
         registered_shortcut,
         shortcut_registered,
         provider_name,
         model_name,
-        provider_configured,
-        provider_needs_key,
+        provider_ready,
+        provider_prompting,
+        provider_streaming,
         ad_hoc_build: crate::permissions::is_ad_hoc(),
     }
 }
@@ -235,41 +238,69 @@ pub fn get_about() -> About {
 }
 
 #[cfg(test)]
-mod credential_status_tests {
-    use crate::providers::{CredentialRequirement, ProviderRegistry};
+mod readiness_tests {
+    use crate::models::ModelStore;
+    use crate::providers::ProviderRegistry;
 
-    fn registry() -> ProviderRegistry {
-        ProviderRegistry::new(
-            reqwest::Client::new(),
-            crate::models::ModelStore::new(&std::env::temp_dir()),
-        )
-    }
-
-    /// The bug this guards: the dashboard reported "API key needed" for Apple
-    /// Speech, which never wanted one, because the credential store was asked
-    /// about every provider regardless of whether it takes a credential.
+    /// A fresh install has no downloaded models, yet must be able to dictate:
+    /// the default engine has to count as ready on its own.
     #[test]
-    fn providers_that_need_no_key_are_never_reported_as_unconfigured() {
-        for descriptor in registry().descriptors() {
-            let provider = registry().get(&descriptor.id).unwrap();
-            if provider.capabilities().local {
-                assert!(
-                    matches!(
-                        provider.credential_requirement(),
-                        CredentialRequirement::None
-                    ),
-                    "{} runs locally but asks for a credential",
-                    descriptor.id
-                );
-            }
-        }
+    fn the_default_engine_is_ready_on_a_fresh_install() {
+        let registry = ProviderRegistry::new(ModelStore::new(
+            &std::env::temp_dir().join("clide-readiness-fresh"),
+        ));
+        let provider = registry.default_provider();
+        assert!(provider.has_model(provider.default_model()));
     }
+}
+
+/// Choose the model Rewrite uses on engines that offer a choice. `None` lets
+/// the engine pick the best installed one.
+#[tauri::command]
+pub fn set_refine_model(app: AppHandle, model: Option<String>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.refine_model = model)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Choose when developer vocabulary primes the speech engine.
+#[tauri::command]
+pub fn set_technical_vocabulary(
+    app: AppHandle,
+    setting: crate::context::TechnicalVocabulary,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.technical_vocabulary = setting)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Turn code formatting of spoken file paths on or off.
+///
+/// Off by default: the backticks are literal characters, and typed into a
+/// terminal they are shell command substitution.
+#[tauri::command]
+pub fn set_format_technical_terms(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.format_technical_terms = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Type words as they are spoken, on engines that can stream.
+#[tauri::command]
+pub fn set_live_typing(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.live_typing = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
 }
 
 /// Switch a refinement engine on or off.
 ///
-/// Explicit rather than automatic: enabling a cloud refiner means transcripts
-/// leave the Mac, and that is the user's decision to make and unmake.
+/// Explicit rather than automatic: Rewrite only runs an engine the user has
+/// switched on.
 #[tauri::command]
 pub fn set_refine_engine_enabled(
     app: AppHandle,

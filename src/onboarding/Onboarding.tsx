@@ -57,7 +57,7 @@ export function Onboarding({
     microphone: status.permissions.microphone === "granted",
     accessibility: status.permissions.accessibility === "granted",
     shortcut: status.shortcutRegistered,
-    provider: status.providerConfigured,
+    provider: status.providerReady,
     test: tested,
     finish: true,
   };
@@ -125,7 +125,7 @@ export function Onboarding({
               {step === "shortcut" && (
                 <ShortcutStep status={status} refresh={refresh} />
               )}
-              {step === "provider" && <ProviderStep refresh={refresh} />}
+              {step === "provider" && <ProviderStep status={status} refresh={refresh} />}
               {step === "test" && (
                 <TestDictationStep status={status} onSuccess={onTestSucceeded} />
               )}

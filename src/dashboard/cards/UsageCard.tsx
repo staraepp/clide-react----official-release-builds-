@@ -35,7 +35,7 @@ export function UsageCard() {
   if (!usage) {
     // Hold the slot while loading so the grid does not reflow under the user.
     return (
-      <Card index={5} className="col-span-12 p-4.5">
+      <Card index={5} className="py-6">
         <CardHeader label="This week" />
       </Card>
     );
@@ -43,7 +43,7 @@ export function UsageCard() {
 
   if (usage.totalTranscripts === 0) {
     return (
-      <Card index={5} className="col-span-12 flex flex-col p-4.5">
+      <Card index={5} className="flex flex-col py-6">
         <CardHeader label="This week" />
         <p className="flex flex-1 items-center py-4 text-[13px] text-ink-3">
           Nothing dictated yet. Your first transcript starts the count.
@@ -53,7 +53,7 @@ export function UsageCard() {
   }
 
   return (
-    <Card index={5} className="col-span-12 flex flex-col p-4.5">
+    <Card index={5} className="flex flex-col py-6">
       <CardHeader label="This week" />
 
       <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 lg:grid-cols-4">

@@ -13,7 +13,7 @@ import { useMicLevel } from "@/dictation/useMicLevel";
 import { EVENTS, on } from "@/lib/events";
 import { useEasterEggs } from "./useEasterEggs";
 import { isBusy } from "@/lib/types";
-import { TitleBar, type View } from "./TitleBar";
+import { Sidebar, type View } from "./Sidebar";
 import * as commands from "@/lib/commands";
 
 export function App() {
@@ -71,8 +71,8 @@ export function App() {
         energy={state.kind === "capturing" ? (level.current ?? 0) : 0}
       />
 
-      <div className="relative flex h-full flex-col">
-        <TitleBar
+      <div className="relative flex h-full">
+        <Sidebar
           view={view}
           onChange={setView}
           status={status}
@@ -80,30 +80,38 @@ export function App() {
           levelRef={level}
         />
 
-        <main className="scroll-area flex-1 px-3">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={view}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="h-full"
-            >
-              {view === "dashboard" && (
-                <Dashboard
-                  status={status}
-                  refresh={refresh}
-                  onNavigate={setView}
-                />
-              )}
-              {view === "models" && <ModelsView />}
-          {view === "history" && <HistoryView />}
-              {view === "settings" && (
-                <SettingsView status={status} refresh={refresh} />
-              )}
-            </motion.div>
-          </AnimatePresence>
+        <main className="relative flex min-w-0 flex-1 flex-col border-l border-line bg-card">
+          <div data-tauri-drag-region className="drag-region h-[38px] shrink-0" />
+
+          <div className="scroll-area min-h-0 flex-1">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={view}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="mx-auto w-full max-w-[820px] px-9 pb-14"
+              >
+                {view === "dashboard" && (
+                  <Dashboard
+                    status={status}
+                    refresh={refresh}
+                    onNavigate={setView}
+                  />
+                )}
+                {view === "models" && <ModelsView />}
+                {view === "history" && <HistoryView />}
+                {view === "settings" && (
+                  <SettingsView
+                    status={status}
+                    refresh={refresh}
+                    onOpenModels={() => setView("models")}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </main>
       </div>
     </div>

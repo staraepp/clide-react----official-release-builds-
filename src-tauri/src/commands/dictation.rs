@@ -37,6 +37,13 @@ pub fn dismiss_dictation(app: AppHandle) {
     pipeline::dismiss(&app);
 }
 
+/// The user pressed on the draggable transcript: keep the dashboard out of the
+/// way of wherever they are about to drop it.
+#[tauri::command]
+pub fn begin_transcript_drag(app: AppHandle) {
+    crate::hud::keep_main_window_behind(&app);
+}
+
 /// The authoritative state, for a window that just opened and missed the
 /// events it would otherwise have been driven by.
 #[tauri::command]

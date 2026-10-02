@@ -356,26 +356,18 @@ Use progressive disclosure rather than exposing every control immediately.
 
 ---
 
-# Credentials
+# Local-only
 
-Cloud providers are BYOK.
+**Clide is 100% on-device (decided 2026-10-01, overriding blueprint §10–§14).**
 
-Store API keys and secrets in **macOS Keychain**.
+There are no cloud STT providers, no cloud rewrite engines, no API keys, and no
+credential store. Engines: Apple Speech, local Whisper, local Parakeet.
+Rewrite uses on-device Apple Intelligence only.
 
-Never store raw API keys in:
-
-- SQLite
-- JSON settings
-- frontend state persisted to disk
-- logs
-- analytics
-- crash reports
-
-Non-secret provider configuration may be stored locally.
-
-Clide does not require a cloud account for the core product.
-
----
+Do not reintroduce a network leg for transcription or rewriting. The only
+network traffic allowed is downloading models the user chose, the
+once-a-day release check, and the signed update package the user chose to
+install (Settings -> About). Nothing in the app opens a web browser.
 
 # Local models
 
@@ -455,7 +447,13 @@ Do not create an entirely separate transcript architecture for imports.
 
 # Dashboard
 
-The main application uses a **bento-style dashboard**.
+> **Superseded (2026-10-01, user direction).** The app is now a flat sidebar
+> (Home / History / Models / Settings) with a single-column Home: dictation,
+> engine + style, recent transcripts, usage. No cards, no bento grid, and no
+> dashboard customization is planned. The widget list below is kept as the pool
+> of things Home may surface, not as a layout.
+
+The main application previously used a **bento-style dashboard**.
 
 The intended long-term dashboard is customizable and can contain widgets such as:
 
@@ -485,9 +483,15 @@ Real dashboard customization comes later.
 
 # Visual direction
 
+> **Superseded (2026-10-01, user direction).** The palette is **monochrome**:
+> ink on paper, light or dark following macOS. "Blue means voice" no longer
+> applies; `--color-voice` is the ink colour. Flat surfaces separated by
+> hairlines, DM Sans, no card chrome. The shader is a faint grayscale wash.
+> The bullets below are the original direction.
+
 Clide is not intended to look like macOS Settings.
 
-The visual direction is:
+The visual direction was:
 
 - modern custom web-app UI
 - soft experimental surfaces

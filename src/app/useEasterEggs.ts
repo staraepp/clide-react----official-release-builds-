@@ -70,7 +70,7 @@ export function useEasterEggs() {
  * so this points them at the repository rather than being a joke alone.
  */
 export function greetTheCurious() {
-  const style = "color:#3B7CA8;font-weight:600";
+  const style = "color:#111112;font-weight:600";
   console.log(
     "%c▁▃▆▄▂  clide\n%cYour voice. Your models. Your words.\nSource: https://github.com/staraepp/clide_stt",
     style,

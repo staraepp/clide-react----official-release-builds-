@@ -8,6 +8,8 @@
 //! to Apple's servers, and a provider Clide describes as local must actually be
 //! local.
 
+pub mod live;
+
 use std::sync::mpsc;
 use std::time::Instant;
 
@@ -23,7 +25,7 @@ use objc2_speech::{
 
 use crate::providers::error::ProviderError;
 use crate::providers::traits::{
-    Capabilities, CredentialRequirement, ModelInfo, QualityClass, SpeedClass, Transcription,
+    Capabilities, ModelInfo, QualityClass, SpeedClass, Transcription,
     TranscriptionProvider, TranscriptionRequest,
 };
 
@@ -76,6 +78,22 @@ pub fn request_authorization() -> SFSpeechRecognizerAuthorizationStatus {
         .unwrap_or(SFSpeechRecognizerAuthorizationStatus::NotDetermined)
 }
 
+/// Fail with a sentence the user can act on when speech recognition has not
+/// been granted.
+pub(crate) fn require_speech_access() -> Result<(), ProviderError> {
+    match authorization() {
+        SFSpeechRecognizerAuthorizationStatus::Authorized => Ok(()),
+        SFSpeechRecognizerAuthorizationStatus::NotDetermined => Err(ProviderError::BadRequest {
+            provider: PROVIDER_ID,
+            detail: "macOS hasn't been asked for speech recognition access yet".into(),
+        }),
+        _ => Err(ProviderError::BadRequest {
+            provider: PROVIDER_ID,
+            detail: "Speech recognition access is turned off in System Settings".into(),
+        }),
+    }
+}
+
 #[async_trait]
 impl TranscriptionProvider for AppleSpeechProvider {
     fn id(&self) -> &'static str {
@@ -90,7 +108,7 @@ impl TranscriptionProvider for AppleSpeechProvider {
         Capabilities {
             local: true,
             batch: true,
-            streaming: false,
+            streaming: true,
             timestamps: true,
             word_timestamps: true,
             diarization: false,
@@ -115,33 +133,11 @@ impl TranscriptionProvider for AppleSpeechProvider {
         MODEL_ID
     }
 
-    fn credential_requirement(&self) -> CredentialRequirement {
-        CredentialRequirement::None
-    }
-
-    /// Nothing to validate but the permission.
-    async fn validate_credentials(&self, _credential: Option<&str>) -> Result<(), ProviderError> {
-        match authorization() {
-            SFSpeechRecognizerAuthorizationStatus::Authorized => Ok(()),
-            SFSpeechRecognizerAuthorizationStatus::NotDetermined => {
-                Err(ProviderError::BadRequest {
-                    provider: PROVIDER_ID,
-                    detail: "macOS hasn't been asked for speech recognition access yet".into(),
-                })
-            }
-            _ => Err(ProviderError::BadRequest {
-                provider: PROVIDER_ID,
-                detail: "Speech recognition access is turned off in System Settings".into(),
-            }),
-        }
-    }
-
     async fn transcribe(
         &self,
         request: TranscriptionRequest,
-        _credential: Option<&str>,
     ) -> Result<Transcription, ProviderError> {
-        self.validate_credentials(None).await?;
+        require_speech_access()?;
 
         let path = request.audio.path().to_path_buf();
         let language = request.language.clone();
@@ -246,12 +242,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn apple_speech_needs_no_credential_and_is_local() {
+    fn apple_speech_is_local() {
         let apple = AppleSpeechProvider::new();
-        assert!(matches!(
-            apple.credential_requirement(),
-            CredentialRequirement::None
-        ));
         assert!(apple.capabilities().local);
     }
 

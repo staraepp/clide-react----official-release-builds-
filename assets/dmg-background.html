@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  The install window's background. Rendered to PNG at 1x and 2x and combined into
+  dmg-background.tiff by scripts/make-dmg-background.sh.
+
+  The window is 660x400, but the canvas is 2400x1500 on purpose. Finder paints
+  nothing outside a background picture, so a window that is enlarged (or an icon
+  view that is zoomed out) would otherwise show a white void around the art.
+  Everything beyond the window is the same dark field, so any size looks
+  intentional. The instruction and the arrow stay in the top-left 660x400, where
+  the app and Applications icons are placed.
+-->
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "DM Sans"; src: url("../src/styles/fonts/dm-sans-latin.woff2") format("woff2"); font-weight: 400 700; }
+  @font-face { font-family: "DM Mono"; src: url("../src/styles/fonts/dm-mono-400-latin.woff2") format("woff2"); font-weight: 400; }
+  html, body { margin: 0; }
+  body {
+    width: 2400px; height: 1500px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(900px 560px at 18% 0%, #1d1d21 0%, rgba(29,29,33,0) 70%),
+      linear-gradient(180deg, #0f0f11 0%, #0a0a0b 100%);
+    font-family: "DM Sans", -apple-system, sans-serif; color: #f2f2f0;
+  }
+  .brand { position: absolute; left: 40px; top: 36px; display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 500; letter-spacing: -0.01em; }
+  .bars { display: flex; align-items: center; gap: 4px; height: 30px; }
+  .bars i { display: block; width: 4px; border-radius: 2px; background: #f2f2f0; }
+  .hint { position: absolute; left: 40px; top: 90px; font-size: 13px; color: #85858d; }
+  /* Finder draws icon labels black in light mode and white in dark mode, and the
+     background cannot know which. A mid-tone plate keeps both readable. */
+  .plate { position: absolute; top: 122px; width: 196px; height: 206px; border-radius: 28px;
+    background: linear-gradient(180deg, #7a7a82 0%, #65656c 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 10px 30px rgba(0,0,0,.35); }
+  .arrow { position: absolute; left: 283px; top: 217px; width: 94px; height: 3px;
+    background-image: radial-gradient(circle, #5a5a62 1.5px, transparent 1.6px); background-size: 11px 3px; background-repeat: repeat-x; }
+  .head { position: absolute; left: 377px; top: 210px; width: 0; height: 0; border-left: 11px solid #5a5a62; border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+  .foot { position: absolute; left: 0; width: 660px; top: 352px; text-align: center; font-family: "DM Mono", monospace; font-size: 10.5px; color: #55555c; }
+</style>
+<div class="brand">
+  <div class="bars"><i style="height:10px"></i><i style="height:22px"></i><i style="height:30px"></i><i style="height:16px"></i><i style="height:8px"></i></div>
+  clide
+</div>
+<div class="hint">Drag clide into Applications to install it.</div>
+<div class="plate" style="left:92px"></div><div class="plate" style="left:372px"></div>
+<div class="arrow"></div><div class="head"></div>
+<div class="foot">Free and open source · MIT · everything runs on your Mac</div>

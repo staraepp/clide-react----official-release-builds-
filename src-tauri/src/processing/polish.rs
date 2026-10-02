@@ -46,6 +46,8 @@ pub fn polish(input: &str) -> String {
             let words = tokenize(line);
             let words = strip_fillers(words);
             let words = collapse_stutters(words);
+            let words = collapse_phrase_repeats(words);
+            let words = strip_trailing_filler(words);
             let line = words.join(" ");
             let line = tidy_punctuation(&line);
             capitalize_sentences(&line)
@@ -59,14 +61,14 @@ fn tokenize(line: &str) -> Vec<String> {
 }
 
 /// The alphabetic core of a token, ignoring surrounding punctuation.
-fn core_of(token: &str) -> String {
+pub(super) fn core_of(token: &str) -> String {
     token
         .trim_matches(|c: char| !c.is_alphanumeric())
         .to_lowercase()
 }
 
 /// Whether dropping this token would also drop punctuation that ends a clause.
-fn ends_sentence(token: &str) -> bool {
+pub(super) fn ends_sentence(token: &str) -> bool {
     token.ends_with(['.', '!', '?'])
 }
 
@@ -121,6 +123,126 @@ fn collapse_stutters(words: Vec<String>) -> Vec<String> {
     out
 }
 
+/// Longest phrase treated as a false start that was simply said again.
+const MAX_REPEATED_PHRASE: usize = 4;
+
+/// Collapse "I want it I want it to" into "I want it to".
+///
+/// The same safety bar as `collapse_stutters`, stretched to short phrases: only
+/// an *immediate* repeat of two to four words, ignoring case and punctuation,
+/// and never across a sentence boundary — "It works. It works." is the user
+/// emphasising, not restarting. Anything fuzzier (a half-spoken word, a
+/// reworded restart) is left for Rewrite, where a model can judge it.
+fn collapse_phrase_repeats(words: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(words.len());
+
+    for token in words {
+        out.push(token);
+
+        // A repeat can itself be repeated, so keep collapsing the tail.
+        while let Some(first_copy) = repeated_tail_start(&out) {
+            let length = (out.len() - first_copy) / 2;
+            out.drain(first_copy..first_copy + length);
+        }
+    }
+
+    out
+}
+
+/// Where the first copy of a phrase repeated at the end of `words` begins.
+fn repeated_tail_start(words: &[String]) -> Option<usize> {
+    (2..=MAX_REPEATED_PHRASE).rev().find_map(|length| {
+        let start = words.len().checked_sub(length * 2)?;
+        let (first, second) = words[start..].split_at(length);
+
+        let same = first
+            .iter()
+            .zip(second)
+            .all(|(a, b)| !core_of(a).is_empty() && core_of(a) == core_of(b));
+        let one_sentence = !first.iter().any(|token| ends_sentence(token));
+
+        (same && one_sentence).then_some(start)
+    })
+}
+
+/// Sign-offs that carry no meaning: "…a problem, but yeah."
+///
+/// Tails that start with a connective ("but yeah") are filler even when they
+/// follow a full stop. Bare ones ("yeah", "anyway", "whatever") are only
+/// stripped from the end of a sentence, so "Did you finish? Yeah." keeps its
+/// answer.
+const TRAILING_FILLER: &[(&[&str], bool)] = &[
+    (&["but", "yeah"], true),
+    (&["so", "yeah"], true),
+    (&["and", "yeah"], true),
+    (&["but", "anyway"], true),
+    (&["so", "anyway"], true),
+    (&["but", "whatever"], true),
+    (&["or", "whatever"], true),
+    (&["yeah"], false),
+    (&["anyway"], false),
+];
+
+/// Fewest words that must remain for a tail to be treated as filler. Anything
+/// shorter is the whole answer, not a sign-off.
+const MIN_WORDS_BEFORE_FILLER: usize = 3;
+
+/// Drop a meaningless sign-off at the very end of the line, keeping the
+/// punctuation that closed it.
+fn strip_trailing_filler(mut words: Vec<String>) -> Vec<String> {
+    for (phrase, after_full_stop_too) in TRAILING_FILLER {
+        let Some(start) = words.len().checked_sub(phrase.len()) else {
+            continue;
+        };
+        if start == 0 {
+            continue;
+        }
+        if !words[start..]
+            .iter()
+            .zip(*phrase)
+            .all(|(token, word)| core_of(token) == *word)
+        {
+            continue;
+        }
+
+        let previous_ends_sentence = ends_sentence(&words[start - 1]);
+        if previous_ends_sentence && !after_full_stop_too {
+            continue;
+        }
+        // Inside a sentence the tail must follow enough words to be a
+        // sign-off rather than the answer itself. After a full stop the
+        // sentence before it stands on its own.
+        if !previous_ends_sentence && start < MIN_WORDS_BEFORE_FILLER {
+            continue;
+        }
+
+        let closing: String = words[words.len() - 1]
+            .chars()
+            .rev()
+            .take_while(|c| !c.is_alphanumeric())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        words.truncate(start);
+
+        if let Some(last) = words.last_mut() {
+            // "a problem, but yeah." -> "a problem."
+            while last.ends_with([',', ';', ':']) {
+                last.pop();
+            }
+            if !last.ends_with(['.', '!', '?']) {
+                if let Some(mark) = closing.chars().find(|c| matches!(c, '.' | '!' | '?')) {
+                    last.push(mark);
+                }
+            }
+        }
+        break;
+    }
+
+    words
+}
+
 /// Remove space before closing punctuation and guarantee one space after it.
 ///
 /// Two passes rather than one: collapsing a duplicate comma changes what the
@@ -173,19 +295,40 @@ fn space_after_punctuation(line: &str) -> String {
 
 /// Capitalise the first word, anything after sentence-ending punctuation, and
 /// the standalone pronoun "i".
+///
+/// Two things are deliberately left alone. Text inside backticks is code, so
+/// `src/app.tsx` must not become `Src/app.tsx`. And a full stop only ends a
+/// sentence when whitespace (or nothing) follows it — "app.tsx" is a filename,
+/// not "app." then "Tsx".
 fn capitalize_sentences(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut expect_capital = true;
+    let mut in_code = false;
 
     let chars: Vec<char> = line.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
+        if c == '`' {
+            in_code = !in_code;
+            // A code span can open a sentence; it uses up the capital.
+            expect_capital = false;
+            out.push(c);
+            continue;
+        }
+
+        if in_code {
+            out.push(c);
+            continue;
+        }
+
         if expect_capital && c.is_alphabetic() {
             out.extend(c.to_uppercase());
             expect_capital = false;
             continue;
         }
 
-        if matches!(c, '.' | '!' | '?') {
+        if matches!(c, '.' | '!' | '?')
+            && chars.get(i + 1).map_or(true, |next| next.is_whitespace())
+        {
             expect_capital = true;
         }
 
@@ -207,6 +350,83 @@ fn is_standalone_i(chars: &[char], index: usize) -> bool {
         .get(index + 1)
         .map_or(true, |c| !c.is_alphanumeric() && *c != '\'');
     before_is_boundary && after_is_boundary
+}
+
+#[cfg(test)]
+mod phrase_repeat_tests {
+    use super::*;
+
+    fn polished(input: &str) -> String {
+        polish(&normalize_whitespace(input))
+    }
+
+    #[test]
+    fn a_restarted_phrase_collapses_to_the_final_version() {
+        assert_eq!(
+            polished("i want it i want it to be fast"),
+            "I want it to be fast"
+        );
+    }
+
+    #[test]
+    fn punctuation_between_the_copies_does_not_hide_the_repeat() {
+        assert_eq!(polished("I want it, I want it to be fast."), "I want it to be fast.");
+    }
+
+    #[test]
+    fn a_phrase_said_three_times_collapses_fully() {
+        assert_eq!(
+            polished("send the file send the file send the file now"),
+            "Send the file now"
+        );
+    }
+
+    #[test]
+    fn repeats_across_a_sentence_boundary_are_emphasis_not_a_restart() {
+        assert_eq!(polished("It works. It works."), "It works. It works.");
+    }
+
+    #[test]
+    fn a_filename_keeps_its_extension_lowercase() {
+        assert_eq!(polished("open app.tsx and commands.ts."), "Open app.tsx and commands.ts.");
+    }
+
+    #[test]
+    fn code_spans_are_not_recapitalised() {
+        assert_eq!(polished("`src/app.tsx` is broken"), "`src/app.tsx` is broken");
+        assert_eq!(polished("see `a.b`. then go"), "See `a.b`. Then go");
+    }
+
+    #[test]
+    fn a_trailing_but_yeah_is_dropped_and_the_sentence_still_ends() {
+        assert_eq!(
+            polished("so i don't think it would be a problem, but yeah."),
+            "So I don't think it would be a problem."
+        );
+        assert_eq!(polished("it should be fine but yeah"), "It should be fine");
+        assert_eq!(polished("That works. But yeah."), "That works.");
+    }
+
+    #[test]
+    fn a_bare_yeah_is_only_dropped_inside_a_sentence() {
+        assert_eq!(polished("I think so yeah"), "I think so");
+        assert_eq!(polished("Did you finish it? Yeah."), "Did you finish it? Yeah.");
+    }
+
+    #[test]
+    fn filler_in_the_middle_or_a_short_answer_is_left_alone() {
+        assert_eq!(polished("Yeah, that works for me."), "Yeah, that works for me.");
+        assert_eq!(polished("no worries anyway"), "No worries anyway");
+        assert_eq!(polished("yeah"), "Yeah");
+    }
+
+    #[test]
+    fn different_phrases_are_never_collapsed() {
+        assert_eq!(
+            polished("i want it i would like it to be fast"),
+            "I want it I would like it to be fast"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Check, Cloud, Cpu, Download, Trash2 } from "lucide-react";
+import { Check, Cpu, Download, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/Button";
 import { Stars } from "./Stars";
@@ -131,8 +131,8 @@ export function ModelCard({
   );
 }
 
-/** A cloud model — no download, no hardware verdict. */
-export function CloudModelRow({
+/** A model that ships with macOS — no download, no hardware verdict. */
+export function BuiltInModelRow({
   name,
   description,
   selected,
@@ -154,7 +154,7 @@ export function CloudModelRow({
       )}
     >
       <div className="flex items-start gap-2">
-        <Cloud size={13} className="mt-0.5 shrink-0 text-ink-3" />
+        <Cpu size={13} className="mt-0.5 shrink-0 text-ink-3" />
         <div className="min-w-0">
           <h3 className="display truncate text-[15px]">{name}</h3>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
@@ -164,7 +164,7 @@ export function CloudModelRow({
       </div>
 
       <div className="mt-auto flex items-center gap-2 border-t border-line pt-3">
-        <span className="text-[11px] text-ink-3">Runs in the cloud</span>
+        <span className="text-[11px] text-ink-3">Built into macOS</span>
         <Button
           size="sm"
           variant={selected ? "surface" : "primary"}

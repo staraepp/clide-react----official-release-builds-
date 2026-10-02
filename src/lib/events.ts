@@ -18,6 +18,7 @@ export const EVENTS = {
   transcriptionComplete: "transcription:complete",
   transcriptionFailed: "transcription:failed",
   transcriptionFellBack: "transcription:fell-back",
+  correctionApplied: "dictation:correction-applied",
   processingStarted: "processing:started",
   processingComplete: "processing:complete",
   insertionStarted: "insertion:started",
@@ -57,6 +58,7 @@ interface EventMap {
   [EVENTS.transcriptionComplete]: TextPayload;
   [EVENTS.transcriptionFailed]: FailurePayload;
   [EVENTS.transcriptionFellBack]: FallbackPayload;
+  [EVENTS.correctionApplied]: { count: number };
   [EVENTS.processingStarted]: null;
   [EVENTS.processingComplete]: TextPayload;
   [EVENTS.insertionStarted]: null;

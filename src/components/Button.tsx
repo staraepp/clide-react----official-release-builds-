@@ -12,7 +12,7 @@ type Size = "sm" | "md" | "lg";
  * button would break the one rule the palette runs on.
  */
 const VARIANT: Record<Variant, string> = {
-  primary: "bg-ink text-white font-medium hover:bg-[#12314a]",
+  primary: "bg-ink text-paper font-medium hover:opacity-85",
   surface:
     "bg-card border border-line-2 text-ink-2 hover:bg-sunken hover:text-ink",
   ghost: "text-ink-3 hover:bg-sunken hover:text-ink",

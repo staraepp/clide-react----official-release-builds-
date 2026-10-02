@@ -5,8 +5,11 @@
 //! Rewrite later means adding a mode here, not threading an LLM through the
 //! dictation code.
 
+pub mod backtrack;
+pub mod names;
 pub mod polish;
 pub mod spoken;
+pub mod techformat;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

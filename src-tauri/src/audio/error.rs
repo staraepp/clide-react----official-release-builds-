@@ -20,6 +20,7 @@ pub enum AudioError {
     #[error("nothing was recorded")]
     Empty,
 
+
     #[error("the recording could not be written: {0}")]
     Write(String),
 

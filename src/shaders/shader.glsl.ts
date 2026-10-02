@@ -162,16 +162,16 @@ void main() {
   );
   float broadField = smoothstep(0.18, 0.86, primary + crossFlow * 0.14);
 
-  vec3 paper = vec3(0.957, 0.976, 0.992); // #F4F9FD
-  vec3 pearl = vec3(0.988, 0.994, 0.998);
-  vec3 neutralMist = vec3(0.906, 0.938, 0.961);
-  vec3 neutralDeep = vec3(0.851, 0.898, 0.933);
+  vec3 paper = vec3(0.965, 0.965, 0.961);
+  vec3 pearl = vec3(0.992, 0.992, 0.99);
+  vec3 neutralMist = vec3(0.925, 0.925, 0.92);
+  vec3 neutralDeep = vec3(0.875, 0.875, 0.87);
 
   // Marketing-site ocean palette. It is mixed in only through presence.
-  vec3 siteSoft = vec3(0.894, 0.953, 0.984); // #E4F3FB
-  vec3 siteCyan = vec3(0.545, 0.843, 0.949); // #8BD7F2
-  vec3 siteBlue = vec3(0.184, 0.612, 0.831); // #2F9CD4
-  vec3 voiceDeep = vec3(0.231, 0.486, 0.659); // #3B7CA8
+  vec3 siteSoft = vec3(0.92, 0.92, 0.915);
+  vec3 siteCyan = vec3(0.72, 0.72, 0.71);
+  vec3 siteBlue = vec3(0.42, 0.42, 0.41);
+  vec3 voiceDeep = vec3(0.25, 0.25, 0.25);
 
   float edgeDistance = length((uv - 0.5) * vec2(1.08, 0.92));
   float edgeFade = 1.0 - smoothstep(0.43, 0.82, edgeDistance);

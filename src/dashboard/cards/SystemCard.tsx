@@ -43,7 +43,7 @@ export function SystemCard({
   const usingAppleSpeech = status.settings.providerId === "apple";
 
   return (
-    <Card index={4} className="col-span-12 flex flex-col p-4.5 lg:col-span-4">
+    <Card index={4} className="flex flex-col py-6">
       <CardHeader
         label="Setup"
         action={
@@ -194,7 +194,7 @@ function Row({
     <li
       className={cn(
         "flex flex-col gap-1.5 rounded-ctl border border-line bg-sunken/60 px-3 py-2.5",
-        wide && "col-span-2",
+        wide && "",
       )}
     >
       <span className="flex items-center gap-2">

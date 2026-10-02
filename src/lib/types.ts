@@ -26,7 +26,7 @@ export type DictationState =
 
 export type DictationStateKind = DictationState["kind"];
 
-export type InsertionMethod = "accessibility" | "clipboardPaste";
+export type InsertionMethod = "accessibility" | "typed" | "clipboardPaste";
 
 export type DictationBehavior = "hold" | "toggle";
 
@@ -46,15 +46,21 @@ export interface PermissionSnapshot {
   speechRecognition: PermissionStatus;
 }
 
-export type FallbackPolicy = "off" | "localOnly" | "anyConfigured";
+export type FallbackPolicy = "off" | "localOnly";
 
 export type RefineStyle = "tidy" | "written";
+
+export type TechnicalVocabulary = "auto" | "always" | "off";
 
 export interface AppSettings {
   fallback: FallbackPolicy;
   refineStyle: RefineStyle;
   refineEngines: string[];
+  refineModel: string | null;
   spokenPunctuation: boolean;
+  technicalVocabulary: TechnicalVocabulary;
+  formatTechnicalTerms: boolean;
+  liveTyping: boolean;
   shortcut: string;
   behavior: DictationBehavior;
   mode: ProcessingMode;
@@ -72,8 +78,12 @@ export interface SystemStatus {
   shortcutRegistered: boolean;
   providerName: string;
   modelName: string;
-  providerConfigured: boolean;
-  providerNeedsKey: boolean;
+  /** The selected engine can run the selected model right now. */
+  providerReady: boolean;
+  /** The selected engine can take a vocabulary hint (local Whisper). */
+  providerPrompting: boolean;
+  /** The selected engine can recognise speech as it arrives. */
+  providerStreaming: boolean;
   adHocBuild: boolean;
   ready: boolean;
 }
@@ -99,24 +109,19 @@ export interface ModelInfo {
   multilingual: boolean;
 }
 
-export type CredentialRequirement =
-  | { kind: "none" }
-  | { kind: "apiKey"; helpUrl: string; expectedPrefix: string | null };
-
 export interface ProviderDescriptor {
   id: string;
   name: string;
   capabilities: Capabilities;
   models: ModelInfo[];
   defaultModel: string;
-  credential: CredentialRequirement;
 }
 
 export interface ProviderStatus {
   id: string;
   name: string;
-  /** Whether a credential is stored — never the credential itself. */
-  configured: boolean;
+  /** The engine has at least one model it can run right now. */
+  ready: boolean;
   modelId: string;
   modelName: string;
   selected: boolean;
@@ -261,6 +266,8 @@ export interface RefinerDescriptor {
   local: boolean;
   available: boolean;
   unavailableReason: string | null;
+  /** Models the user can choose between. Empty when the engine has one. */
+  models: string[];
 }
 
 /** Who this build is, and where to go with it. */
@@ -275,12 +282,11 @@ export interface About {
   tauriVersion: string;
 }
 
-/** Latest public GitHub release, cached by the native app for 24 hours. */
+/** The newest signed release, checked by the native app at most once a day. */
 export interface UpdateStatus {
   currentVersion: string;
   latestVersion: string | null;
   updateAvailable: boolean;
-  releaseUrl: string;
   /** Unix milliseconds. */
   checkedAt: number | null;
 }

@@ -3,3 +3,6 @@ dist
 src-tauri/target
 src-tauri/gen/schemas
 .DS_Store
+
+# Generated per release by scripts/make-update-manifest.mjs
+/latest.json

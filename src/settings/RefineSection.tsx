@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cloud, Cpu } from "lucide-react";
+import { Cpu } from "lucide-react";
 
 import { Segmented } from "@/components/Segmented";
 import { StatusDot } from "@/components/StatusDot";
@@ -45,9 +45,7 @@ export function RefineSection({
         {active ? (
           <>
             Rewrite will use <strong className="text-ink">{active.name}</strong>.
-            {active.local
-              ? " Your transcript stays on this Mac."
-              : " Your transcript is sent to them."}
+            Your transcript stays on this Mac.
           </>
         ) : (
           <>
@@ -90,11 +88,7 @@ export function RefineSection({
               )}
             >
               <span className="flex items-center gap-2">
-                {refiner.local ? (
-                  <Cpu size={13} className="shrink-0 text-ink-3" />
-                ) : (
-                  <Cloud size={13} className="shrink-0 text-ink-3" />
-                )}
+                <Cpu size={13} className="shrink-0 text-ink-3" />
                 <span className="truncate text-[13px] text-ink">{refiner.name}</span>
                 <Toggle
                   checked={enabled}
@@ -111,6 +105,27 @@ export function RefineSection({
                 {refiner.available ? refiner.description : refiner.unavailableReason}
               </p>
 
+              {refiner.models.length > 0 && enabled && (
+                <label className="flex flex-col gap-1 text-[11px] text-ink-3">
+                  Model
+                  <select
+                    className="rounded-ctl border border-line bg-card px-2 py-1.5 text-[12.5px] text-ink"
+                    value={status.settings.refineModel ?? ""}
+                    onChange={async (event) => {
+                      await commands.setRefineModel(event.target.value || null);
+                      refresh();
+                    }}
+                  >
+                    <option value="">Best installed (automatic)</option>
+                    {refiner.models.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <span className="mt-auto flex items-center gap-1.5">
                 <StatusDot
                   tone={!refiner.available ? "problem" : enabled ? "ready" : "idle"}
@@ -121,9 +136,7 @@ export function RefineSection({
                     : !enabled
                       ? "Off"
                       : refiner.id === active?.id
-                        ? refiner.local
-                          ? "In use · stays on this Mac"
-                          : "In use · text leaves your Mac"
+                        ? "In use · stays on this Mac"
                         : "On · used if the one above cannot run"}
                 </span>
               </span>

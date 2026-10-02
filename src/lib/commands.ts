@@ -6,12 +6,12 @@
  * command breaks the build rather than a button.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl as openExternal } from "@tauri-apps/plugin-opener";
 import type {
   About,
   PermissionStatus,
   FallbackPolicy,
   RefineStyle,
+  TechnicalVocabulary,
   RefinerDescriptor,
   ModelsPage,
   Usage,
@@ -35,6 +35,7 @@ export const startDictation = () => invoke<void>("start_dictation");
 export const stopDictation = () => invoke<void>("stop_dictation");
 export const cancelDictation = () => invoke<void>("cancel_dictation");
 export const retryDictation = () => invoke<void>("retry_dictation");
+export const beginTranscriptDrag = () => invoke<void>("begin_transcript_drag");
 export const dismissDictation = () => invoke<void>("dismiss_dictation");
 export const getDictationState = () =>
   invoke<DictationState>("get_dictation_state");
@@ -61,16 +62,6 @@ export const listProviders = () =>
   invoke<ProviderDescriptor[]>("list_providers");
 export const getProviderStatus = () =>
   invoke<ProviderStatus[]>("get_provider_status");
-
-/** Validates the key with the provider, then stores it locally. */
-export const saveProviderKey = (providerId: string, key: string) =>
-  invoke<void>("save_provider_key", { providerId, key });
-
-export const removeProviderKey = (providerId: string) =>
-  invoke<void>("remove_provider_key", { providerId });
-
-export const validateProvider = (providerId: string) =>
-  invoke<void>("validate_provider", { providerId });
 
 export const selectProvider = (providerId: string, modelId?: string) =>
   invoke<void>("select_provider", { providerId, modelId: modelId ?? null });
@@ -146,22 +137,11 @@ export const setRefineStyle = (style: RefineStyle) =>
   invoke<void>("set_refine_style", { style });
 
 export const getAbout = () => invoke<About>("get_about");
+/** Download, verify and install the newer version, then relaunch. */
+export const installUpdate = () => invoke<void>("install_update");
+
 export const checkForUpdates = (force = false) =>
   invoke<UpdateStatus>("check_for_updates", { force });
-
-/**
- * Open a link in the user's browser.
- *
- * Never navigates the webview itself — clide's window is the app, and a page
- * loading into it would replace the app with a website.
- */
-export async function openUrl(url: string): Promise<void> {
-  try {
-    await openExternal(url);
-  } catch (error) {
-    console.error("could not open the link", error);
-  }
-}
 
 /** Apple Speech only. Separate from the microphone, even though it is on-device. */
 export const requestSpeechPermission = () =>
@@ -174,3 +154,15 @@ export const setRefineEngineEnabled = (engineId: string, enabled: boolean) =>
 /** Spoken "comma" and "new line" become punctuation. Applies in every mode. */
 export const setSpokenPunctuation = (enabled: boolean) =>
   invoke<void>("set_spoken_punctuation", { enabled });
+
+export const setTechnicalVocabulary = (setting: TechnicalVocabulary) =>
+  invoke<void>("set_technical_vocabulary", { setting });
+
+export const setRefineModel = (model: string | null) =>
+  invoke<void>("set_refine_model", { model });
+
+export const setLiveTyping = (enabled: boolean) =>
+  invoke<void>("set_live_typing", { enabled });
+
+export const setFormatTechnicalTerms = (enabled: boolean) =>
+  invoke<void>("set_format_technical_terms", { enabled });

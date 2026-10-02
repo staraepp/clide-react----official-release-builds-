@@ -1,11 +1,8 @@
 import { useState } from "react";
-import { Card } from "@/components/Card";
-import { cn } from "@/lib/cn";
 import { Segmented } from "@/components/Segmented";
 import { Toggle } from "@/components/Toggle";
 import { ShortcutRecorder } from "@/components/ShortcutRecorder";
 import { Button } from "@/components/Button";
-import { ProviderSettings } from "@/providers/ProviderSettings";
 import { RefineSection } from "./RefineSection";
 import { AboutSection } from "./AboutSection";
 import * as commands from "@/lib/commands";
@@ -14,16 +11,18 @@ import type { SystemStatus } from "@/lib/types";
 export function SettingsView({
   status,
   refresh,
+  onOpenModels,
 }: {
   status: SystemStatus;
   refresh: () => void;
+  onOpenModels: () => void;
 }) {
   const [shortcutError, setShortcutError] = useState<string | null>(null);
   const [insertionTest, setInsertionTest] = useState<string | null>(null);
   const [permissionRepair, setPermissionRepair] = useState<string | null>(null);
 
   return (
-    <div className="scroll-area -mr-2 grid h-full auto-rows-min grid-cols-12 gap-3 py-3 pb-12 pr-2">
+    <div className="flex flex-col divide-y divide-line pt-2">
       <Section
         title="Shortcut"
         description="One shortcut, used everywhere. Hold to talk, or press once to start and again to stop."
@@ -69,11 +68,43 @@ export function SettingsView({
       </Section>
 
       <Section
-        span="full"
         title="Transcription"
-        description="clide is bring-your-own-key. Keys are stored on this Mac only, in a file just your account can read. They never reach clide's database, its settings, or any log."
+        description="Everything runs on this Mac. Your audio is never uploaded, and no account or key is needed."
       >
-        <ProviderSettings onChange={refresh} />
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="min-w-0">
+            <p className="display text-[15px] text-ink">{status.providerName}</p>
+            <p className="text-[12.5px] text-ink-2">
+              {status.modelName}
+              {status.providerReady ? "" : " · not downloaded yet"}
+            </p>
+          </div>
+          <Button className="ml-auto" onClick={onOpenModels}>
+            Choose engine and models
+          </Button>
+        </div>
+      </Section>
+
+      <Section
+        title="Live typing"
+        description="Words appear in the app you are speaking to as you say them, instead of all at once when you stop."
+      >
+        <label className="flex items-center gap-3">
+          <Toggle
+            checked={status.settings.liveTyping}
+            label="Type words as you speak"
+            onChange={async (next) => {
+              await commands.setLiveTyping(next);
+              refresh();
+            }}
+          />
+          <span className="text-[13px] text-ink">
+            {status.settings.liveTyping ? "On" : "Off"}
+          </span>
+        </label>
+        <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
+          {liveTypingNote(status)}
+        </p>
       </Section>
 
       <Section
@@ -101,6 +132,59 @@ export function SettingsView({
       </Section>
 
       <Section
+        title="Developer dictation"
+        description="Helps clide hear technical words in editors, terminals and browsers, and can write spoken file paths as code."
+      >
+        <div className="flex flex-col gap-4">
+          <Segmented
+            className="w-full"
+            value={status.settings.technicalVocabulary}
+            onChange={async (setting) => {
+              await commands.setTechnicalVocabulary(setting);
+              refresh();
+            }}
+            segments={[
+              { value: "auto", label: "Dev apps", hint: "Editors, terminals and browsers" },
+              { value: "always", label: "Everywhere", hint: "Every app" },
+              { value: "off", label: "Off", hint: "Never" },
+            ]}
+          />
+          {status.settings.technicalVocabulary !== "off" &&
+            !status.providerPrompting && (
+              <p className="text-[12px] leading-relaxed text-warn">
+                {status.providerName} can't take vocabulary hints. Switch to a
+                Whisper model on the Models page and this takes effect.
+              </p>
+            )}
+
+          <label className="flex items-start gap-3">
+            <Toggle
+              checked={status.settings.formatTechnicalTerms}
+              label="Write spoken file paths as code"
+              onChange={async (next) => {
+                await commands.setFormatTechnicalTerms(next);
+                refresh();
+              }}
+            />
+            <span className="text-[13px] leading-snug text-ink">
+              Write spoken file paths as code
+              <span className="mt-1 block text-[12px] text-ink-3">
+                &ldquo;open src slash app dot tsx&rdquo; becomes{" "}
+                <code className="font-mono">`src/app.tsx`</code>.
+              </span>
+            </span>
+          </label>
+          {status.settings.formatTechnicalTerms && (
+            <p className="text-[12px] leading-relaxed text-warn">
+              The backticks are typed as real characters. Leave this off for
+              terminals and code editors, where they would break a command or
+              clutter your source.
+            </p>
+          )}
+        </div>
+      </Section>
+
+      <Section
         title="Rewrite"
         description="Rewrite mode cleans the transcript locally, then asks an on-device model to finish the job. Nothing is sent anywhere."
       >
@@ -122,22 +206,15 @@ export function SettingsView({
             { value: "off", label: "Just tell me", hint: "Report the failure and let me choose" },
             {
               value: "localOnly",
-              label: "Use a local model",
-              hint: "Your audio stays on this Mac",
-            },
-            {
-              value: "anyConfigured",
-              label: "Use anything set up",
-              hint: "May send the recording to another cloud provider",
+              label: "Try another engine",
+              hint: "Another on-device engine takes over",
             },
           ]}
         />
         <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
-          {status.settings.fallback === "anyConfigured"
-            ? "Recordings may be sent to a provider you did not pick for them."
-            : status.settings.fallback === "localOnly"
-              ? "Substitutes run on this Mac, so nothing extra leaves it."
-              : "Nothing is substituted. You'll get a Retry button instead."}
+          {status.settings.fallback === "localOnly"
+            ? "Another engine on this Mac takes over, and the HUD says which."
+            : "Nothing is substituted. You'll get a Retry button instead."}
         </p>
       </Section>
 
@@ -225,7 +302,6 @@ export function SettingsView({
       </Section>
 
       <Section
-        span="full"
         title="About"
         description="clide is free and open source. If something is broken, the issue tracker is the fastest way to reach us — the build number above tells us exactly what you are running."
       >
@@ -236,39 +312,42 @@ export function SettingsView({
 }
 
 /**
- * One settings group, sized to what it holds.
+ * One settings group: what it is on the left, its controls on the right.
  *
- * Settings used to be a stack of full-width cards, which is a list with rounded
- * corners. Laying them out as a bento means the eye can find a section by its
- * shape and position instead of reading every heading in order — and a control
- * that needs two lines no longer claims the same width as one that needs ten.
+ * Plain rows divided by hairlines. Settings used to be a bento of cards, which
+ * made every group look equally important and hid the page's actual order.
  */
 function Section({
   title,
   description,
-  span = "half",
   children,
 }: {
   title: string;
   description: string;
-  /** How much of the 12-column grid this section occupies. */
-  span?: "half" | "full";
   children: React.ReactNode;
 }) {
   return (
-    <Card
-      className={cn(
-        "flex flex-col gap-4 p-5",
-        span === "full" ? "col-span-12" : "col-span-12 lg:col-span-6",
-      )}
-    >
+    <section className="grid grid-cols-1 gap-x-12 gap-y-4 py-7 md:grid-cols-[230px_minmax(0,1fr)]">
       <div>
-        <h2 className="display text-[15px] text-ink">{title}</h2>
+        <h2 className="display text-[14.5px] text-ink">{title}</h2>
         <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-2">
           {description}
         </p>
       </div>
-      <div className="min-w-0 flex-1">{children}</div>
-    </Card>
+      <div className="min-w-0">{children}</div>
+    </section>
   );
+}
+
+function liveTypingNote(status: SystemStatus): string {
+  if (!status.settings.liveTyping) {
+    return "Everything is typed in one go when you stop speaking.";
+  }
+  if (!status.providerStreaming) {
+    return `${status.providerName} can only transcribe a finished recording. Choose Apple Speech to type as you speak.`;
+  }
+  if (status.settings.mode === "rewrite") {
+    return "Rewrite needs the whole recording, so this is paused while Rewrite is the style.";
+  }
+  return "Spoken corrections such as \u201cscratch that\u201d are typed as words while this is on, because the text is already on screen.";
 }

@@ -4,18 +4,31 @@
 //! presence, no interception of clicks except when it is showing an error the
 //! user has to act on.
 
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::state::AppState;
 
 pub const LABEL: &str = "hud";
 
-/// Gap between the HUD and the bottom of the screen, in logical pixels.
-/// How far above the screen edge the HUD sits.
-///
-/// Close enough to read as attached to the bottom of the display rather than
-/// floating in the middle of it, but clear of the Dock.
-const BOTTOM_MARGIN: f64 = 24.0;
+/// How far above the bottom of the usable screen area the pill sits, in
+/// logical pixels. The usable area stops at the Dock, so this keeps the pill
+/// close to the screen edge without ever covering the Dock.
+const BOTTOM_MARGIN: f64 = 10.0;
+
+/// The window is only as big as what it shows. A large transparent window
+/// would swallow clicks meant for the app underneath it.
+const PILL_SIZE: (f64, f64) = (340.0, 56.0);
+const CARD_SIZE: (f64, f64) = (400.0, 250.0);
+
+/// Long enough for the HUD's exit animation to finish before the window goes.
+const EXIT_ANIMATION: Duration = Duration::from_millis(480);
+
+/// Bumped by every `show`, so a hide that was scheduled earlier can tell that
+/// the HUD has been wanted again since and leave it alone.
+static SHOWN: AtomicU64 = AtomicU64::new(0);
 
 fn window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(LABEL)
@@ -34,6 +47,8 @@ pub fn show(app: &AppHandle) {
         return;
     };
 
+    SHOWN.fetch_add(1, Ordering::SeqCst);
+    fit_to_state(app, &window);
     position(app, &window);
     sync_interactivity(app, &window);
 
@@ -43,11 +58,92 @@ pub fn show(app: &AppHandle) {
     let _ = window.set_always_on_top(true);
 }
 
+/// Hide the HUD once its exit animation has played, unless it is shown again
+/// in the meantime.
 pub fn hide(app: &AppHandle) {
-    if let Some(window) = window(app) {
-        if let Err(error) = window.hide() {
-            tracing::warn!(?error, "could not hide the HUD");
+    let seen = SHOWN.load(Ordering::SeqCst);
+    let app = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_ANIMATION).await;
+        if SHOWN.load(Ordering::SeqCst) != seen {
+            return;
         }
+        if let Some(window) = window(&app) {
+            if let Err(error) = window.hide() {
+                tracing::warn!(?error, "could not hide the HUD");
+            }
+        }
+    });
+}
+
+/// Keep the main window from covering whatever the user is dragging text onto.
+///
+/// Starting a drag from the HUD activates the app, and macOS answers by
+/// raising every Clide window — including the dashboard, straight over the
+/// text field the transcript was meant for. The HUD itself never takes focus,
+/// so the cure is to send the dashboard back down. It is repeated for a moment
+/// because activation lands a beat after the mouse goes down.
+pub fn keep_main_window_behind(app: &AppHandle) {
+    let app = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        for delay_ms in [0u64, 60, 160, 400] {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+
+            let target = app.clone();
+            let _ = app.run_on_main_thread(move || send_main_window_back(&target));
+        }
+    });
+}
+
+fn send_main_window_back(app: &AppHandle) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    if !main.is_visible().unwrap_or(false) || main.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let Ok(pointer) = main.ns_window() else {
+        return;
+    };
+
+    // SAFETY: `pointer` is the live NSWindow behind a window that still
+    // exists, and this runs on the main thread, where AppKit requires it.
+    unsafe {
+        let window: *mut AnyObject = pointer.cast();
+        let _: () = msg_send![window, orderBack: std::ptr::null::<AnyObject>()];
+    }
+}
+
+/// Whether the HUD is showing a failure card rather than the pill.
+fn showing_card(app: &AppHandle) -> bool {
+    use crate::dictation::DictationState;
+
+    matches!(
+        app.state::<AppState>().session.state(),
+        DictationState::CaptureFailed { .. }
+            | DictationState::TranscriptionFailed { .. }
+            | DictationState::ProcessingFailed { .. }
+            | DictationState::InsertionFailed { .. }
+    )
+}
+
+fn target_size(app: &AppHandle) -> (f64, f64) {
+    if showing_card(app) {
+        CARD_SIZE
+    } else {
+        PILL_SIZE
+    }
+}
+
+fn fit_to_state(app: &AppHandle, window: &WebviewWindow) {
+    let (width, height) = target_size(app);
+    if let Err(error) = window.set_size(LogicalSize::new(width, height)) {
+        tracing::debug!(?error, "could not size the HUD");
     }
 }
 
@@ -56,16 +152,9 @@ pub fn hide(app: &AppHandle) {
 /// A HUD that swallows clicks while someone is trying to work is worse than no
 /// HUD, so interactivity is opt-in per state rather than always on.
 pub fn sync_interactivity(app: &AppHandle, window: &WebviewWindow) {
-    use crate::dictation::DictationState;
-
-    // Only the failure states put controls (Retry, Copy) on screen.
-    let needs_input = matches!(
-        app.state::<AppState>().session.state(),
-        DictationState::CaptureFailed { .. }
-            | DictationState::TranscriptionFailed { .. }
-            | DictationState::ProcessingFailed { .. }
-            | DictationState::InsertionFailed { .. }
-    );
+    // Only the failure card puts controls (Retry, Copy, the draggable
+    // transcript) on screen.
+    let needs_input = showing_card(app);
 
     if let Err(error) = window.set_ignore_cursor_events(!needs_input) {
         tracing::debug!(?error, "could not update HUD cursor behaviour");
@@ -84,17 +173,17 @@ fn position(app: &AppHandle, window: &WebviewWindow) {
     let Some(monitor) = monitor else {
         return;
     };
-    let Ok(size) = window.outer_size() else {
-        return;
-    };
 
+    // The size just requested, not `outer_size()`: a resize is applied
+    // asynchronously, so reading the window back can return the old one.
     let scale = monitor.scale_factor();
-    let area = monitor.size();
-    let origin = monitor.position();
+    let (width, height) = target_size(app);
+    let (width, height) = ((width * scale).round() as i32, (height * scale).round() as i32);
+    let area = monitor.work_area();
 
-    let x = origin.x + ((area.width as i32 - size.width as i32) / 2);
-    let y = origin.y + area.height as i32
-        - size.height as i32
+    let x = area.position.x + ((area.size.width as i32 - width) / 2);
+    let y = area.position.y + area.size.height as i32
+        - height
         - (BOTTOM_MARGIN * scale).round() as i32;
 
     if let Err(error) = window.set_position(PhysicalPosition::new(x, y)) {

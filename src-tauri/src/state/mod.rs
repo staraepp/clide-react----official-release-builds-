@@ -3,7 +3,6 @@
 use std::sync::Mutex;
 
 use crate::audio::Recorder;
-use crate::credentials::Credentials;
 use crate::database::Database;
 use crate::models::ModelStore;
 use crate::dictation::DictationSession;
@@ -13,12 +12,8 @@ use crate::settings::{self, AppSettings};
 
 pub struct AppState {
     pub db: Database,
-    /// Provider API keys. See `credentials` for why this is not the Keychain.
-    pub credentials: Credentials,
     /// Local model weights on this machine.
     pub models: ModelStore,
-    /// Shared HTTP client for provider API calls. Has a total timeout.
-    pub http: reqwest::Client,
     /// Separate client for model downloads: no total timeout, because that
     /// would cap how long a download may take. See `lib.rs`.
     pub downloads: reqwest::Client,
@@ -27,6 +22,8 @@ pub struct AppState {
     /// Text refinement, kept separate from transcription (blueprint §7).
     pub refiners: RefinerRegistry,
     pub session: DictationSession,
+    /// The live-typing session attached to the dictation in progress, if any.
+    pub live: crate::dictation::live::LiveSlot,
 
     /// Cached copy of the persisted preferences. The database stays the
     /// source of truth; this exists so the audio and shortcut paths never
@@ -42,37 +39,38 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         db: Database,
-        credentials: Credentials,
         models: ModelStore,
-        http: reqwest::Client,
         downloads: reqwest::Client,
         recorder: Recorder,
         providers: ProviderRegistry,
     ) -> Self {
-        // Cloud refiners reuse the transcription credentials and client.
-        let http_for_refiners = http.clone();
-        let credentials_for_refiners = credentials.clone();
+        let refiners = RefinerRegistry::new();
 
         let settings = {
             let default_provider = providers.default_provider();
             let connection = db.lock();
-            settings::load(
+            let mut loaded = settings::load(
                 &connection,
                 default_provider.id(),
                 default_provider.default_model(),
-            )
+            );
+            if settings::reconcile(&mut loaded, &providers, &refiners) {
+                if let Err(error) = settings::save(&connection, &loaded) {
+                    tracing::warn!(%error, "could not persist the repaired preferences");
+                }
+            }
+            loaded
         };
 
         Self {
             db,
-            credentials,
             models,
-            http,
             downloads,
             recorder,
             providers,
-            refiners: RefinerRegistry::new(http_for_refiners, credentials_for_refiners),
+            refiners,
             session: DictationSession::new(),
+            live: Mutex::new(None),
             settings: Mutex::new(settings),
             registered_shortcut: Mutex::new(None),
         }

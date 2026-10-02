@@ -14,7 +14,7 @@ export function RecentCard({ onOpenHistory }: { onOpenHistory: () => void }) {
   const { transcripts, loading } = useHistory({ limit: 4 });
 
   return (
-    <Card index={3} className="col-span-12 flex flex-col p-4.5 lg:col-span-8">
+    <Card index={3} className="flex flex-col py-6">
       <CardHeader
         label="Recent"
         action={
