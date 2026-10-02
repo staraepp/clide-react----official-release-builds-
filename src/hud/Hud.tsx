@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Copy, RotateCw, X } from "lucide-react";
+import { Check, Copy, GripVertical, RotateCw, X } from "lucide-react";
 
 import { Waveform } from "@/components/Waveform";
-import { ShaderBackground } from "@/shaders/ShaderBackground";
 import { useDictationState } from "@/dictation/useDictationState";
 import { useMicLevel } from "@/dictation/useMicLevel";
-import { useSystemStatus } from "@/app/useSystemStatus";
 import { failureDetail, stateLabel } from "@/dictation/labels";
 import * as commands from "@/lib/commands";
 import { EVENTS, on } from "@/lib/events";
@@ -20,93 +18,84 @@ import { cn } from "@/lib/cn";
 /**
  * The recording HUD.
  *
- * A chip, not a window: no title bar, no settings, no engine menu. It shows one
- * line of state and, when something has gone wrong, the two or three controls
- * needed to recover. The window never takes focus, so the caret stays where the
- * user left it.
+ * A pill, not a window: no title bar, no settings, no engine menu. It shows one
+ * line of state and, when something has gone wrong, a card holding the
+ * transcript so it can be dragged straight into a text field. The window never
+ * takes focus, so the caret stays where the user left it.
  */
 export function Hud() {
   const state = useDictationState();
   const level = useMicLevel();
   const fellBack = useFallbackNotice(state);
   const corrected = useCorrectionNotice(state);
-  // The HUD never takes focus, so this only refetches when settings change —
-  // which is the one thing that can alter how the chip should render.
-  const { status } = useSystemStatus();
 
   const failure = failureDetail(state);
   const transcript = transcriptOf(state);
   const expanded = failure !== null;
 
   return (
-    <div className="flex h-full w-full items-end justify-center pb-1">
+    <div className="flex h-full w-full items-end justify-center">
       <AnimatePresence>
         {state.kind !== "idle" && (
           <motion.div
             key="hud"
-            initial={{ opacity: 0, y: 26, scale: 0.72 }}
+            initial={{ opacity: 0, y: 18, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{
               opacity: 0,
-              y: 14,
-              scale: 0.78,
+              y: 10,
+              scale: 0.85,
               // Leaving is quicker than arriving, so the HUD gets out of the
               // way rather than lingering over the text it just inserted.
-              transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+              transition: { duration: 0.14, ease: [0.4, 0, 1, 1] },
             }}
-            transition={{
-              // Underdamped, so it overshoots and settles: the HUD appears
-              // over whatever the user is typing in and should announce itself.
-              type: "spring",
-              stiffness: 560,
-              damping: 22,
-              mass: 0.62,
-            }}
+            transition={{ type: "spring", stiffness: 520, damping: 26, mass: 0.6 }}
             className={cn(
-              "pointer-events-auto relative flex flex-col overflow-hidden rounded-[13px]",
-              "border border-line-2 bg-card/92 backdrop-blur-xl",
-              "shadow-[0_6px_22px_-8px_rgba(10,35,56,0.28)]",
-              expanded ? "w-[300px]" : "w-auto",
+              "pointer-events-auto relative flex flex-col overflow-hidden",
+              "bg-[#0c0c0d] text-white shadow-[0_8px_28px_-10px_rgba(0,0,0,0.55)]",
+              "ring-1 ring-white/10",
+              expanded ? "w-[360px] rounded-[22px]" : "w-auto rounded-full",
             )}
           >
-            {/* The same field as the dashboard, at chip scale. It is the only
-                thing the user sees while dictating into another app, so the
-                voice blue lives here rather than in a static fill. Suppressed
-                on failure, where blue would read as "still working". */}
-            {!failure && (
-              <ShaderBackground
-                intensity={status?.settings.visualIntensity ?? "normal"}
-                active
-                energy={state.kind === "capturing" ? (level.current ?? 0) : 0}
-                className="opacity-70"
-              />
-            )}
-
-            <div className="relative flex items-center gap-2.5 px-3.5 py-2.5">
+            <div
+              className={cn(
+                "relative flex items-center gap-2.5",
+                expanded ? "px-4 pt-3.5" : "px-4 py-2",
+              )}
+            >
               <Visual state={state} levelRef={level} />
-              <span className="whitespace-nowrap text-[12.5px] text-ink">
+              <span className="whitespace-nowrap text-[12.5px] text-white/90">
                 {stateLabel(state)}
               </span>
 
               {fellBack && (
-                <span className="whitespace-nowrap text-[11px] text-warn">
+                <span className="whitespace-nowrap text-[11px] text-white/50">
                   via {fellBack.usedProvider}
                 </span>
               )}
 
               {corrected > 0 && (
-                <span className="whitespace-nowrap text-[11px] text-ink-3">
+                <span className="whitespace-nowrap text-[11px] text-white/50">
                   {corrected === 1 ? "corrected" : `${corrected} corrections`}
                 </span>
               )}
             </div>
 
             {failure && (
-              <div className="relative border-t border-line px-3.5 py-2.5">
-                <p className="text-[11.5px] leading-relaxed text-ink-2">
-                  {failure}
-                </p>
-                <div className="mt-2.5 flex items-center gap-1.5">
+              <div className="relative flex flex-col gap-2.5 px-4 pb-3.5 pt-2">
+                {transcript ? (
+                  <>
+                    <p className="text-[11.5px] leading-relaxed text-white/60">
+                      Drag this into any text field, or copy it.
+                    </p>
+                    <TranscriptChip text={transcript} />
+                  </>
+                ) : (
+                  <p className="text-[11.5px] leading-relaxed text-white/60">
+                    {failure}
+                  </p>
+                )}
+                <div className="flex items-center gap-1.5">
                   {state.kind === "transcriptionFailed" && state.retryable && (
                     <HudAction
                       icon={<RotateCw size={11} />}
@@ -119,6 +108,7 @@ export function Hud() {
                     <HudAction
                       icon={<Copy size={11} />}
                       label="Copy"
+                      primary
                       onClick={() => commands.copyText(transcript)}
                     />
                   )}
@@ -133,6 +123,36 @@ export function Hud() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * The transcript as a chip that can be dragged out of the HUD.
+ *
+ * Dropped on any text field it types the words in, with no Accessibility
+ * permission needed — the drop is the user's own gesture, so macOS lets it
+ * through. Once it lands, the HUD closes.
+ */
+function TranscriptChip({ text }: { text: string }) {
+  return (
+    <div
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData("text/plain", text);
+        event.dataTransfer.effectAllowed = "copy";
+      }}
+      onDragEnd={(event) => {
+        if (event.dataTransfer.dropEffect !== "none") {
+          commands.dismissDictation();
+        }
+      }}
+      className="flex cursor-grab items-start gap-2 rounded-xl bg-white/10 px-3 py-2.5 active:cursor-grabbing"
+    >
+      <GripVertical size={14} className="mt-0.5 shrink-0 text-white/40" />
+      <p className="line-clamp-4 select-none text-[12.5px] leading-snug text-white">
+        {text}
+      </p>
     </div>
   );
 }
@@ -195,8 +215,8 @@ function Visual({
 }) {
   if (state.kind === "capturing") {
     return (
-      <div className="h-4 w-[58px]">
-        <Waveform levelRef={levelRef} bars={16} color="#5b9bc9" />
+      <div className="h-5 w-[52px]">
+        <Waveform levelRef={levelRef} bars={7} color="#ffffff" />
       </div>
     );
   }
@@ -207,7 +227,7 @@ function Visual({
         initial={{ scale: 0.4, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 600, damping: 20 }}
-        className="flex size-4 items-center justify-center rounded-full bg-ok/15 text-ok"
+        className="flex size-4 items-center justify-center rounded-full bg-white text-black"
       >
         <Check size={10} strokeWidth={3} />
       </motion.span>
@@ -215,22 +235,22 @@ function Visual({
   }
 
   if (failureDetail(state)) {
-    return <span className="size-1.5 shrink-0 rounded-full bg-stop" />;
+    return <span className="size-2 shrink-0 rounded-full bg-white/70" />;
   }
 
-  // Transcribing / inserting: the waveform settles into a travelling shimmer.
+  // Transcribing / inserting: the waveform settles into a travelling pulse.
   return (
-    <div className="flex h-4 w-[58px] items-center gap-[3px]">
-      {Array.from({ length: 10 }).map((_, index) => (
+    <div className="flex h-5 w-[52px] items-center justify-between">
+      {Array.from({ length: 7 }).map((_, index) => (
         <motion.span
           key={index}
-          className="h-full w-[2.5px] rounded-full bg-voice"
-          animate={{ scaleY: [0.24, 0.92, 0.24], opacity: [0.35, 1, 0.35] }}
+          className="size-[5px] rounded-full bg-white"
+          animate={{ scale: [0.7, 1.35, 0.7], opacity: [0.35, 1, 0.35] }}
           transition={{
-            duration: 1.1,
+            duration: 1,
             repeat: Infinity,
             ease: "easeInOut",
-            delay: index * 0.075,
+            delay: index * 0.08,
           }}
         />
       ))}
@@ -256,8 +276,8 @@ function HudAction({
       className={cn(
         "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
         primary
-          ? "bg-ink text-white hover:bg-[#12314a]"
-          : "text-ink-3 hover:bg-sunken hover:text-ink",
+          ? "bg-white text-black hover:bg-white/85"
+          : "text-white/60 hover:bg-white/10 hover:text-white",
       )}
     >
       {icon}

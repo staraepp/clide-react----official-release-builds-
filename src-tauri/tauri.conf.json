@@ -32,8 +32,8 @@
       {
         "label": "hud",
         "url": "hud.html",
-        "width": 380,
-        "height": 160,
+        "width": 340,
+        "height": 56,
         "resizable": false,
         "decorations": false,
         "transparent": true,

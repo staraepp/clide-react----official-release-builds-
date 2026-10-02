@@ -24,7 +24,7 @@ export function ModeCard({
   onChange: () => void;
 }) {
   return (
-    <Card index={2} className="col-span-12 flex flex-col p-4.5 lg:col-span-4">
+    <Card index={2} className="flex flex-col py-6">
       <CardHeader label="Style" />
 
       <Segmented

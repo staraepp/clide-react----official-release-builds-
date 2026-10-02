@@ -3,14 +3,10 @@
 /* ---------------------------------------------------------------------------
    clide's design system.
 
-   The identity comes from the marketing site, not from here: paper #F4F9FD,
-   navy ink #0A2338, Montserrat 500 for display, DM Sans for everything else.
-   No black, no gradients, no glow.
-
-   One rule governs colour: **blue means voice.** `--color-voice` and its
-   relatives appear only where clide is hearing or handling speech — the
-   waveform, the listening state, the caret. Buttons, links and headings are
-   ink. A blue that turns up anywhere else is a bug.
+   Monochrome. One ink colour on neutral surfaces, light or dark to match macOS,
+   with state carried by weight, shape and small dots rather than hue. No
+   gradients, no glow, no card chrome: structure comes from hairlines and
+   spacing.
 
    Fonts are bundled rather than linked: the app runs offline and its CSP
    admits no remote font host.
@@ -49,42 +45,68 @@
 }
 
 @theme {
-  /* Surfaces. Cards are lighter than the page, so they lift without a shadow. */
-  --color-paper: #f4f9fd;
+  --color-paper: #f6f6f5;
   --color-card: #ffffff;
-  --color-sunken: #f7fafc;
+  --color-sunken: #f1f1ef;
 
-  /* Ink. Navy rather than black — softer, and what the site already uses. */
-  --color-ink: #0a2338;
-  --color-ink-2: #4a6076;
-  --color-ink-3: #64798c;
+  --color-ink: #111112;
+  --color-ink-2: #55555c;
+  --color-ink-3: #85858d;
 
-  --color-line: #e3edf5;
-  --color-line-2: #d2e2ee;
+  --color-line: #e8e8e5;
+  --color-line-2: #d9d9d5;
 
-  /* Voice. Reserved for speech: waveform, listening, caret. Nothing else. */
-  --color-voice: #5b9bc9;
-  --color-voice-deep: #3b7ca8;
-  --color-voice-tint: #e9f3fb;
+  /* `voice` kept as a token so existing components follow the palette: in a
+     monochrome system the live-speech accent is simply the ink. */
+  --color-voice: #111112;
+  --color-voice-deep: #000000;
+  --color-voice-tint: #ebebe8;
 
-  /* Semantic state, kept apart from the accent and used only at small sizes. */
-  --color-ok: #3f8f6d;
-  --color-ok-tint: #f3faf6;
-  --color-warn: #b3812c;
-  --color-stop: #c4574f;
-  --color-stop-tint: #fdf4f3;
+  /* State colours stay muted and appear only as small dots and short labels. */
+  --color-ok: #3d7a5b;
+  --color-ok-tint: #f1f7f3;
+  --color-warn: #9a6a1f;
+  --color-stop: #b4443c;
+  --color-stop-tint: #fbf1f0;
 
-  --radius-card: 16px;
-  --radius-ctl: 10px;
+  --radius-card: 12px;
+  --radius-ctl: 9px;
 
   --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-display: "Montserrat", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: "DM Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Dark follows the system. Utilities read these variables at runtime, so
+   overriding them here recolours every component at once. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #0d0d0e;
+    --color-card: #141415;
+    --color-sunken: #1a1a1c;
+
+    --color-ink: #f2f2f0;
+    --color-ink-2: #a3a3aa;
+    --color-ink-3: #75757d;
+
+    --color-line: #232326;
+    --color-line-2: #333338;
+
+    --color-voice: #f2f2f0;
+    --color-voice-deep: #ffffff;
+    --color-voice-tint: #232326;
+
+    --color-ok: #6fb38f;
+    --color-ok-tint: #14201a;
+    --color-warn: #d4a14f;
+    --color-stop: #e0766d;
+    --color-stop-tint: #241615;
+  }
 }
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: light dark;
   }
 
   html,
@@ -127,7 +149,8 @@
 }
 
 @layer components {
-  /* The bento surface. One definition, used by every card. */
+  /* A bordered surface, used only where something must read as a panel
+     (onboarding, model tiles). Everything else is flat. */
   .card {
     background: var(--color-card);
     border: 1px solid var(--color-line);
@@ -149,7 +172,7 @@
   .display {
     font-family: var(--font-display);
     font-weight: 500;
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
   }
 
   .numeral {
@@ -168,7 +191,7 @@
     border: 1px solid var(--color-line-2);
     border-bottom-width: 2px;
     border-radius: 6px;
-    background: #fbfdff;
+    background: var(--color-card);
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--color-ink-2);

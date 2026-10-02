@@ -4,15 +4,16 @@ import { ModeCard } from "./cards/ModeCard";
 import { RecentCard } from "./cards/RecentCard";
 import { UsageCard } from "./cards/UsageCard";
 import { SystemCard } from "./cards/SystemCard";
+import { StatusDot } from "@/components/StatusDot";
 import { useDictationState } from "@/dictation/useDictationState";
 import { useMicLevel } from "@/dictation/useMicLevel";
 import type { SystemStatus } from "@/lib/types";
 
 /**
- * The bento dashboard.
+ * Home: one column, one document.
  *
- * Fixed layout by design: v0.1 shows what a customisable grid will look like
- * without paying for drag, resize, and persistence before dictation is solid.
+ * Dictation first, then the two choices that shape it, then what you have
+ * said. Setup only takes space when something needs fixing.
  */
 export function Dashboard({
   status,
@@ -27,13 +28,24 @@ export function Dashboard({
   const level = useMicLevel();
 
   return (
-    <div className="grid auto-rows-min grid-cols-12 gap-3 py-3">
+    <div className="flex flex-col divide-y divide-line pt-2">
       <DictationCard state={state} status={status} levelRef={level} />
-      <ProviderCard status={status} onConfigure={() => onNavigate("models")} />
-      <ModeCard mode={status.settings.mode} onChange={refresh} />
+
+      <div className="grid grid-cols-1 gap-x-12 sm:grid-cols-2">
+        <ProviderCard status={status} onConfigure={() => onNavigate("models")} />
+        <ModeCard mode={status.settings.mode} onChange={refresh} />
+      </div>
+
       <RecentCard onOpenHistory={() => onNavigate("history")} />
 
-      <SystemCard status={status} onRefresh={refresh} />
+      {status.ready ? (
+        <p className="flex items-center gap-2 py-5 text-[12.5px] text-ink-3">
+          <StatusDot tone="ready" />
+          Microphone, Accessibility and your shortcut are all set.
+        </p>
+      ) : (
+        <SystemCard status={status} onRefresh={refresh} />
+      )}
 
       <UsageCard />
     </div>

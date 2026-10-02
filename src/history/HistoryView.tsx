@@ -85,14 +85,14 @@ export function HistoryView() {
                 : "No transcripts yet."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col divide-y divide-line">
             {transcripts.map((transcript, index) => (
               <motion.li
                 key={transcript.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(index, 10) * 0.018 }}
-                className="card group p-4"
+                className="group py-4"
               >
                 <p className="text-[13.5px] leading-relaxed text-ink">
                   {transcript.text}

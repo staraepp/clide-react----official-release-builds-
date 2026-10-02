@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Card } from "@/components/Card";
-import { cn } from "@/lib/cn";
 import { Segmented } from "@/components/Segmented";
 import { Toggle } from "@/components/Toggle";
 import { ShortcutRecorder } from "@/components/ShortcutRecorder";
@@ -24,7 +22,7 @@ export function SettingsView({
   const [permissionRepair, setPermissionRepair] = useState<string | null>(null);
 
   return (
-    <div className="scroll-area -mr-2 grid h-full auto-rows-min grid-cols-12 gap-3 py-3 pb-12 pr-2">
+    <div className="flex flex-col divide-y divide-line pt-2">
       <Section
         title="Shortcut"
         description="One shortcut, used everywhere. Hold to talk, or press once to start and again to stop."
@@ -70,7 +68,6 @@ export function SettingsView({
       </Section>
 
       <Section
-        span="full"
         title="Transcription"
         description="Everything runs on this Mac. Your audio is never uploaded, and no account or key is needed."
       >
@@ -283,7 +280,6 @@ export function SettingsView({
       </Section>
 
       <Section
-        span="full"
         title="About"
         description="clide is free and open source. If something is broken, the issue tracker is the fastest way to reach us — the build number above tells us exactly what you are running."
       >
@@ -294,39 +290,29 @@ export function SettingsView({
 }
 
 /**
- * One settings group, sized to what it holds.
+ * One settings group: what it is on the left, its controls on the right.
  *
- * Settings used to be a stack of full-width cards, which is a list with rounded
- * corners. Laying them out as a bento means the eye can find a section by its
- * shape and position instead of reading every heading in order — and a control
- * that needs two lines no longer claims the same width as one that needs ten.
+ * Plain rows divided by hairlines. Settings used to be a bento of cards, which
+ * made every group look equally important and hid the page's actual order.
  */
 function Section({
   title,
   description,
-  span = "half",
   children,
 }: {
   title: string;
   description: string;
-  /** How much of the 12-column grid this section occupies. */
-  span?: "half" | "full";
   children: React.ReactNode;
 }) {
   return (
-    <Card
-      className={cn(
-        "flex flex-col gap-4 p-5",
-        span === "full" ? "col-span-12" : "col-span-12 lg:col-span-6",
-      )}
-    >
+    <section className="grid grid-cols-1 gap-x-12 gap-y-4 py-7 md:grid-cols-[230px_minmax(0,1fr)]">
       <div>
-        <h2 className="display text-[15px] text-ink">{title}</h2>
+        <h2 className="display text-[14.5px] text-ink">{title}</h2>
         <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-2">
           {description}
         </p>
       </div>
-      <div className="min-w-0 flex-1">{children}</div>
-    </Card>
+      <div className="min-w-0">{children}</div>
+    </section>
   );
 }

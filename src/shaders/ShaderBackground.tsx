@@ -210,14 +210,14 @@ export function ShaderBackground({
       ref={canvasRef}
       aria-hidden
       className={cn(
-        "pointer-events-none absolute inset-0 h-full w-full",
+        "pointer-events-none absolute inset-0 h-full w-full dark:invert",
         className,
       )}
       // Painted before WebGL initialises, and the whole background if a
       // machine has no WebGL at all.
       style={{
-        background:
-          "radial-gradient(120% 80% at 20% 0%, #e8f2fa 0%, #f2f8fc 45%, #f4f9fd 100%)",
+        // A fixed light grey: in dark mode the canvas is inverted wholesale.
+        background: "#f6f6f5",
       }}
     />
   );

@@ -76,7 +76,7 @@ export function AboutSection() {
       </div>
 
       <div className="flex items-center gap-3 rounded-ctl border border-line bg-card px-3 py-2.5">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-voice-soft text-voice-deep">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-voice-tint text-voice-deep">
           {update?.updateAvailable ? <Download size={13} /> : <RefreshCw size={13} />}
         </span>
         <span className="min-w-0 flex-1">

@@ -2,11 +2,12 @@ import { useEffect, useRef, type RefObject } from "react";
 import { cn } from "@/lib/cn";
 
 /**
- * The live microphone waveform — the clearest place the "blue means voice"
- * rule shows up.
+ * The live microphone waveform.
  *
  * Bars scroll right to left from real RMS levels, so what the user sees is
- * their own voice rather than a decorative animation. Drawn on a canvas and
+ * their own voice rather than a decorative animation. Levels are mapped on a
+ * decibel scale, so ordinary speech moves the bars a long way and a whisper
+ * still registers. Drawn on a canvas and
  * driven by a ref rather than React state: at 30 updates a second, re-rendering
  * a component tree per sample would cost more than the audio pipeline does.
  */
@@ -28,9 +29,9 @@ interface Props {
 export function Waveform({
   levelRef,
   frozen = false,
-  bars = 28,
+  bars = 9,
   className,
-  color = "#5b9bc9",
+  color = "#ffffff",
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const historyRef = useRef<number[]>(Array(bars).fill(0));
@@ -60,7 +61,7 @@ export function Waveform({
 
       // Advance the history at a fixed rate so the scroll speed does not
       // depend on the display's refresh rate.
-      if (!frozenRef.current && now - lastPush > 42) {
+      if (!frozenRef.current && now - lastPush > 34) {
         lastPush = now;
         const history = historyRef.current;
         history.push(levelRef.current ?? 0);
@@ -71,18 +72,18 @@ export function Waveform({
 
       const history = historyRef.current;
       const slot = width / bars;
-      const barWidth = Math.max(1.5 * ratio, slot * 0.42);
+      // Wide, fully rounded bars: at rest they read as dots, not slivers.
+      const barWidth = Math.max(2 * ratio, slot * 0.58);
       const radius = barWidth / 2;
       const middle = height / 2;
 
       for (let i = 0; i < history.length; i++) {
-        // Perceptual curve: quiet speech should still visibly move the bars.
-        const amplitude = Math.min(1, Math.pow(history[i], 0.55) * 1.65);
-        const barHeight = Math.max(barWidth, amplitude * height * 0.92);
+        const amplitude = decibelAmplitude(history[i]);
+        const barHeight = Math.max(barWidth, amplitude * height);
         const x = i * slot + (slot - barWidth) / 2;
 
         // Older samples fade out toward the left.
-        context.globalAlpha = 0.35 + 0.65 * (i / bars);
+        context.globalAlpha = 0.45 + 0.55 * (i / bars);
         context.fillStyle = color;
         roundedBar(context, x, middle - barHeight / 2, barWidth, barHeight, radius);
       }
@@ -100,6 +101,17 @@ export function Waveform({
       className={cn("h-full w-full", className)}
     />
   );
+}
+
+/**
+ * Map an RMS level to 0..1 on a decibel scale. -52 dB (a quiet room) is the
+ * floor and -12 dB (loud speech) the ceiling, so normal speech fills most of
+ * the bar instead of barely lifting it.
+ */
+function decibelAmplitude(level: number): number {
+  if (level <= 0.0004) return 0;
+  const decibels = 20 * Math.log10(level);
+  return Math.min(1, Math.max(0, (decibels + 52) / 40));
 }
 
 function roundedBar(
