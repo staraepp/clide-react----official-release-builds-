@@ -35,6 +35,7 @@ export const startDictation = () => invoke<void>("start_dictation");
 export const stopDictation = () => invoke<void>("stop_dictation");
 export const cancelDictation = () => invoke<void>("cancel_dictation");
 export const retryDictation = () => invoke<void>("retry_dictation");
+export const beginTranscriptDrag = () => invoke<void>("begin_transcript_drag");
 export const dismissDictation = () => invoke<void>("dismiss_dictation");
 export const getDictationState = () =>
   invoke<DictationState>("get_dictation_state");
@@ -136,6 +137,9 @@ export const setRefineStyle = (style: RefineStyle) =>
   invoke<void>("set_refine_style", { style });
 
 export const getAbout = () => invoke<About>("get_about");
+/** Download, verify and install the newer version, then relaunch. */
+export const installUpdate = () => invoke<void>("install_update");
+
 export const checkForUpdates = (force = false) =>
   invoke<UpdateStatus>("check_for_updates", { force });
 

@@ -77,6 +77,48 @@ pub fn hide(app: &AppHandle) {
     });
 }
 
+/// Keep the main window from covering whatever the user is dragging text onto.
+///
+/// Starting a drag from the HUD activates the app, and macOS answers by
+/// raising every Clide window — including the dashboard, straight over the
+/// text field the transcript was meant for. The HUD itself never takes focus,
+/// so the cure is to send the dashboard back down. It is repeated for a moment
+/// because activation lands a beat after the mouse goes down.
+pub fn keep_main_window_behind(app: &AppHandle) {
+    let app = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        for delay_ms in [0u64, 60, 160, 400] {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+
+            let target = app.clone();
+            let _ = app.run_on_main_thread(move || send_main_window_back(&target));
+        }
+    });
+}
+
+fn send_main_window_back(app: &AppHandle) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    if !main.is_visible().unwrap_or(false) || main.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let Ok(pointer) = main.ns_window() else {
+        return;
+    };
+
+    // SAFETY: `pointer` is the live NSWindow behind a window that still
+    // exists, and this runs on the main thread, where AppKit requires it.
+    unsafe {
+        let window: *mut AnyObject = pointer.cast();
+        let _: () = msg_send![window, orderBack: std::ptr::null::<AnyObject>()];
+    }
+}
+
 /// Whether the HUD is showing a failure card rather than the pill.
 fn showing_card(app: &AppHandle) -> bool {
     use crate::dictation::DictationState;

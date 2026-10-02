@@ -9,7 +9,7 @@ import type { About, UpdateStatus } from "@/lib/types";
 /**
  * Which build this is, and whether a newer one exists.
  *
- * Nothing here opens a browser. Updates are announced, not linked.
+ * Updates install in place, from a signed package, and only when asked.
  *
  * The commit is here so a bug report can name the exact build rather than "the
  * latest one", and it is copyable for the same reason.
@@ -18,6 +18,7 @@ export function AboutSection() {
   const [about, setAbout] = useState<About | null>(null);
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,6 +41,18 @@ export function AboutSection() {
       setUpdateError(commands.errorMessage(error));
     } finally {
       setChecking(false);
+    }
+  };
+
+  const install = async () => {
+    setInstalling(true);
+    setUpdateError(null);
+    try {
+      // On success the app relaunches, so there is nothing to do afterwards.
+      await commands.installUpdate();
+    } catch (error) {
+      setUpdateError(commands.errorMessage(error));
+      setInstalling(false);
     }
   };
 
@@ -93,9 +106,15 @@ export function AboutSection() {
                 : "Checks once a day")}
           </span>
         </span>
-        <Button size="sm" disabled={checking} onClick={checkNow}>
-          {checking ? "Checking…" : "Check now"}
-        </Button>
+        {update?.updateAvailable ? (
+          <Button size="sm" variant="primary" disabled={installing} onClick={install}>
+            {installing ? "Installing…" : "Install and restart"}
+          </Button>
+        ) : (
+          <Button size="sm" disabled={checking} onClick={checkNow}>
+            {checking ? "Checking…" : "Check now"}
+          </Button>
+        )}
       </div>
 
       <p className="text-[11.5px] text-ink-3">

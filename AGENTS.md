@@ -365,8 +365,9 @@ credential store. Engines: Apple Speech, local Whisper, local Parakeet.
 Rewrite uses on-device Apple Intelligence only.
 
 Do not reintroduce a network leg for transcription or rewriting. The only
-network traffic allowed is downloading models the user chose and the
-once-a-day release check.
+network traffic allowed is downloading models the user chose, the
+once-a-day release check, and the signed update package the user chose to
+install (Settings -> About). Nothing in the app opens a web browser.
 
 # Local models
 

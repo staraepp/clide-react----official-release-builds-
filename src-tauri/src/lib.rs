@@ -34,10 +34,6 @@ use state::AppState;
 /// How often expired temporary audio is swept up.
 const AUDIO_REAPER_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Network timeout for the update check: short enough that a dead endpoint
-/// fails while the user is still paying attention.
-const HTTP_TIMEOUT: Duration = Duration::from_secs(90);
-
 /// Model downloads get their own client, and deliberately **no total
 /// timeout**.
 ///
@@ -61,6 +57,7 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -111,12 +108,14 @@ pub fn run() {
             commands::settings::set_refine_model,
             commands::settings::set_format_technical_terms,
             commands::settings::set_live_typing,
+            commands::dictation::begin_transcript_drag,
             commands::settings::set_refine_style,
             commands::settings::get_about,
             commands::settings::set_language,
             commands::settings::complete_onboarding,
             commands::settings::reset_onboarding,
             commands::updates::check_for_updates,
+            commands::updates::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("clide failed to start");
@@ -135,11 +134,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let database = Database::open(&data_dir.join("clide.sqlite3"))?;
     let recorder = Recorder::spawn(clip_dir);
-    let http = reqwest::Client::builder()
-        .timeout(HTTP_TIMEOUT)
-        .user_agent(concat!("Clide/", env!("CARGO_PKG_VERSION")))
-        .build()?;
-
     let downloads = reqwest::Client::builder()
         .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
         .read_timeout(DOWNLOAD_READ_TIMEOUT)
@@ -149,7 +143,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     handle.manage(AppState::new(
         database,
         ModelStore::new(&data_dir),
-        http,
         downloads,
         recorder,
         ProviderRegistry::new(ModelStore::new(&data_dir)),

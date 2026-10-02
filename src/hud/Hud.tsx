@@ -138,7 +138,9 @@ function TranscriptChip({ text }: { text: string }) {
   return (
     <div
       draggable
+      onMouseDown={() => commands.beginTranscriptDrag()}
       onDragStart={(event) => {
+        commands.beginTranscriptDrag();
         event.dataTransfer.setData("text/plain", text);
         event.dataTransfer.effectAllowed = "copy";
       }}

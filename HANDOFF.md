@@ -127,6 +127,30 @@ already on screen) — Settings says so. Other engines are batch only.
 **Not verified with a real voice**: the recogniser/typing path compiles and the
 word-stability logic is tested, but nobody has dictated through it yet.
 
+**Auto-update (new).** `commands/updates.rs` uses `tauri-plugin-updater`.
+`check_for_updates` (cached 24 h, also run by the Sidebar on launch) asks
+`https://github.com/staraepp/clide_stt/releases/latest/download/latest.json`;
+`install_update` downloads, verifies against the pubkey in `tauri.conf.json`
+(`plugins.updater`), installs and relaunches. Only on the user's button press.
+The signing key pair is `~/.tauri/clide-updater.key` (+ `.pub`, no password) —
+**back it up; losing it means no existing install can ever auto-update again.**
+Per release: build with `TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/clide-updater.key)"
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""`, notarize+staple the DMG and app, re-tar the
+stapled app (`tar -czf clide.app.tar.gz clide.app`), re-sign it
+(`npx tauri signer sign <tar.gz>`), run `node scripts/make-update-manifest.mjs`,
+and upload `clide.app.tar.gz` + `latest.json` + the DMG to release `v<version>`.
+2.0.0 is the first updater-capable version; 0.1.x installs must update by hand.
+Not verified end to end: no release with a `latest.json` exists yet.
+
+**Misc 2.0.0 changes.** Browser links and the opener plugin were removed.
+Silence is rejected before transcription (`audio/speech.rs`) and phantom
+transcripts ("Thank you.") are dropped. The HUD waveform auto-scales to the
+speaker. Dragging the failure chip sends the main window to the back
+(`hud::keep_main_window_behind`) — unverified in the real app. New dark icon
+(`assets/icon.svg`, rendered to `src-tauri/icons`); the DMG background is a dark
+2400x1500 pt canvas in a multi-res TIFF (`assets/dmg-background.html` +
+`scripts/make-dmg-background.sh`) so enlarging the window never shows white.
+
 **Release.** Version 2.0.0. Signed with the Developer ID Application cert
 (`APPLE_SIGNING_IDENTITY`), notarized via the `clide-notary` keychain profile.
 Build with `CARGO_PROFILE_RELEASE_STRIP=none npx tauri build`.

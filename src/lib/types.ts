@@ -282,12 +282,11 @@ export interface About {
   tauriVersion: string;
 }
 
-/** Latest public GitHub release, cached by the native app for 24 hours. */
+/** The newest signed release, checked by the native app at most once a day. */
 export interface UpdateStatus {
   currentVersion: string;
   latestVersion: string | null;
   updateAvailable: boolean;
-  releaseUrl: string;
   /** Unix milliseconds. */
   checkedAt: number | null;
 }

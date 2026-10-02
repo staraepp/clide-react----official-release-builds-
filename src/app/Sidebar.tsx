@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Clock, Cpu, House, Settings2, type LucideIcon } from "lucide-react";
 
@@ -7,6 +8,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { stateLabel, stateTone } from "@/dictation/labels";
 import { isBusy, type DictationState, type SystemStatus } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import * as commands from "@/lib/commands";
 
 export type View = "dashboard" | "models" | "history" | "settings";
 
@@ -37,6 +39,17 @@ export function Sidebar({
   state: DictationState;
   levelRef: React.RefObject<number>;
 }) {
+  // Cached natively for a day, so this is cheap after the first launch.
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  useEffect(() => {
+    commands
+      .checkForUpdates(false)
+      .then((update) =>
+        setUpdateVersion(update.updateAvailable ? update.latestVersion : null),
+      )
+      .catch(() => setUpdateVersion(null));
+  }, []);
+
   const label =
     state.kind === "idle"
       ? status.ready
@@ -87,6 +100,15 @@ export function Sidebar({
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 px-2.5">
+        {updateVersion && (
+          <button
+            type="button"
+            onClick={() => onChange("settings")}
+            className="mb-1 rounded-lg bg-voice-tint px-2.5 py-1.5 text-left text-[12px] text-ink transition-opacity hover:opacity-80"
+          >
+            clide {updateVersion} is available
+          </button>
+        )}
         <div className="flex items-center gap-2 text-[12.5px] text-ink-2">
           <StatusDot
             tone={

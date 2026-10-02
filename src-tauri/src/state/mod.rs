@@ -14,8 +14,6 @@ pub struct AppState {
     pub db: Database,
     /// Local model weights on this machine.
     pub models: ModelStore,
-    /// Shared HTTP client for the update check. Has a total timeout.
-    pub http: reqwest::Client,
     /// Separate client for model downloads: no total timeout, because that
     /// would cap how long a download may take. See `lib.rs`.
     pub downloads: reqwest::Client,
@@ -42,7 +40,6 @@ impl AppState {
     pub fn new(
         db: Database,
         models: ModelStore,
-        http: reqwest::Client,
         downloads: reqwest::Client,
         recorder: Recorder,
         providers: ProviderRegistry,
@@ -68,7 +65,6 @@ impl AppState {
         Self {
             db,
             models,
-            http,
             downloads,
             recorder,
             providers,

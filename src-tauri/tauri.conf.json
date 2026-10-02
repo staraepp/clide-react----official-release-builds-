@@ -68,7 +68,7 @@
       "minimumSystemVersion": "13.0",
       "entitlements": "Entitlements.plist",
       "dmg": {
-        "background": "../assets/dmg-background.png",
+        "background": "../assets/dmg-background.tiff",
         "windowSize": {
           "width": 660,
           "height": 400
@@ -82,6 +82,15 @@
           "y": 218
         }
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIwMkU5MUM1NEY2QjhEMjIKUldRaWpXdFB4WkV1c0tHMEFYbzhUOXRLaEFjZEQvWksxczZvU2xQWkFLbmlhV2ZOOWFvbE1vMGUK",
+      "endpoints": [
+        "https://github.com/staraepp/clide_stt/releases/latest/download/latest.json"
+      ]
     }
   }
 }
