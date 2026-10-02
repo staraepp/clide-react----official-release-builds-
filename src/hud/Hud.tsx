@@ -41,13 +41,13 @@ export function Hud() {
             key="hud"
             initial={{ opacity: 0, y: 18, scale: 0.8 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
+            // Leaving swells a touch, then draws in to nothing: opacity only
+            // drops at the very end, so it never reads as a blink.
             exit={{
-              opacity: 0,
-              y: 10,
-              scale: 0.85,
-              // Leaving is quicker than arriving, so the HUD gets out of the
-              // way rather than lingering over the text it just inserted.
-              transition: { duration: 0.14, ease: [0.4, 0, 1, 1] },
+              opacity: [1, 1, 0],
+              scale: [1, 1.07, 0.5],
+              y: [0, 0, 6],
+              transition: { duration: 0.42, times: [0, 0.35, 1], ease: "easeInOut" },
             }}
             transition={{ type: "spring", stiffness: 520, damping: 26, mass: 0.6 }}
             className={cn(

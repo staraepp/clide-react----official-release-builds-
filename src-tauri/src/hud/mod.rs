@@ -4,6 +4,9 @@
 //! presence, no interception of clicks except when it is showing an error the
 //! user has to act on.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::state::AppState;
@@ -19,6 +22,13 @@ const BOTTOM_MARGIN: f64 = 10.0;
 /// would swallow clicks meant for the app underneath it.
 const PILL_SIZE: (f64, f64) = (340.0, 56.0);
 const CARD_SIZE: (f64, f64) = (400.0, 250.0);
+
+/// Long enough for the HUD's exit animation to finish before the window goes.
+const EXIT_ANIMATION: Duration = Duration::from_millis(480);
+
+/// Bumped by every `show`, so a hide that was scheduled earlier can tell that
+/// the HUD has been wanted again since and leave it alone.
+static SHOWN: AtomicU64 = AtomicU64::new(0);
 
 fn window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(LABEL)
@@ -37,6 +47,7 @@ pub fn show(app: &AppHandle) {
         return;
     };
 
+    SHOWN.fetch_add(1, Ordering::SeqCst);
     fit_to_state(app, &window);
     position(app, &window);
     sync_interactivity(app, &window);
@@ -47,12 +58,23 @@ pub fn show(app: &AppHandle) {
     let _ = window.set_always_on_top(true);
 }
 
+/// Hide the HUD once its exit animation has played, unless it is shown again
+/// in the meantime.
 pub fn hide(app: &AppHandle) {
-    if let Some(window) = window(app) {
-        if let Err(error) = window.hide() {
-            tracing::warn!(?error, "could not hide the HUD");
+    let seen = SHOWN.load(Ordering::SeqCst);
+    let app = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_ANIMATION).await;
+        if SHOWN.load(Ordering::SeqCst) != seen {
+            return;
         }
-    }
+        if let Some(window) = window(&app) {
+            if let Err(error) = window.hide() {
+                tracing::warn!(?error, "could not hide the HUD");
+            }
+        }
+    });
 }
 
 /// Whether the HUD is showing a failure card rather than the pill.
