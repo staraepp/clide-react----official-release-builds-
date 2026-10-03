@@ -11,6 +11,7 @@ pub mod database;
 pub mod dictation;
 pub mod hud;
 pub mod insertion;
+pub mod logging;
 pub mod models;
 pub mod permissions;
 pub mod processing;
@@ -49,12 +50,8 @@ const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("CLIDE_LOG")
-                .unwrap_or_else(|_| "clide=info,warn".into()),
-        )
-        .init();
+    logging::init();
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "clide starting");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -117,8 +114,17 @@ pub fn run() {
             commands::updates::check_for_updates,
             commands::updates::install_update,
         ])
-        .run(tauri::generate_context!())
-        .expect("clide failed to start");
+        .build(tauri::generate_context!())
+        .expect("clide failed to start")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Free the loaded speech model before the process tears down
+                // its GPU state around it; see `TranscriptionProvider::unload`.
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.providers.unload_all();
+                }
+            }
+        });
 }
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -147,6 +153,16 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         recorder,
         ProviderRegistry::new(ModelStore::new(&data_dir)),
     ));
+
+    // Load the chosen speech model now, in the background, so the first
+    // dictation does not pay for it.
+    {
+        let state = handle.state::<AppState>();
+        let settings = state.settings();
+        state
+            .providers
+            .warm_up_in_background(&settings.provider_id, &settings.model_id);
+    }
 
     // Register the configured shortcut. A failure here is reported through
     // system status rather than being fatal: the app is still usable, and the

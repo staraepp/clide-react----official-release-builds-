@@ -37,6 +37,23 @@ impl ProviderRegistry {
         Arc::clone(&self.providers[0])
     }
 
+    /// Load the chosen engine's model in the background, so the first
+    /// dictation after launch (or after switching) does not wait for it.
+    pub fn warm_up_in_background(&self, provider_id: &str, model_id: &str) {
+        let Some(provider) = self.get(provider_id) else {
+            return;
+        };
+        let model_id = model_id.to_string();
+        tauri::async_runtime::spawn_blocking(move || provider.warm_up(&model_id));
+    }
+
+    /// Free every engine's resident state. Called once, as the app quits.
+    pub fn unload_all(&self) {
+        for provider in &self.providers {
+            provider.unload();
+        }
+    }
+
     pub fn descriptors(&self) -> Vec<ProviderDescriptor> {
         self.providers
             .iter()
