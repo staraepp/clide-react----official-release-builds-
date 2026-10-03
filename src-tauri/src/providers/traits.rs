@@ -124,6 +124,19 @@ pub trait TranscriptionProvider: Send + Sync {
     fn models(&self) -> Vec<ModelInfo>;
     fn default_model(&self) -> &'static str;
 
+    /// Load whatever `transcribe` will need, ahead of the first dictation.
+    ///
+    /// Blocking, and best-effort: a failure here is not an error, because the
+    /// real attempt will report it. Engines with nothing to load do nothing.
+    fn warm_up(&self, _model: &str) {}
+
+    /// Release anything held between dictations (a loaded model, GPU state).
+    ///
+    /// Called as the app quits. Engines that keep native state alive must free
+    /// it here: letting the process exit with it still resident makes the
+    /// runtime's own static cleanup abort, and macOS reports a crash.
+    fn unload(&self) {}
+
     async fn transcribe(
         &self,
         request: TranscriptionRequest,

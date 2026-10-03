@@ -9,7 +9,7 @@
 //! retries by itself and nothing silently changes provider: a failure stops,
 //! keeps whatever it has, and waits for the user.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
@@ -443,6 +443,7 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
     events::emit_state(app, &next);
     events::emit_bare(app, events::PROCESSING_STARTED);
 
+    let processing_started = Instant::now();
     let (mode, style, engines, spoken, format_technical, refine_model) = {
         let settings = state.settings();
         (
@@ -502,6 +503,11 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
                 text
             };
 
+            tracing::info!(
+                processing_ms = processing_started.elapsed().as_millis() as u64,
+                rewrite = (mode == processing::ProcessingMode::Rewrite),
+                "text processed"
+            );
             events::emit(
                 app,
                 events::PROCESSING_COMPLETE,
@@ -624,8 +630,13 @@ async fn deliver(app: &AppHandle, text: String) {
 
     let payload = text.clone();
     let target = state.session.target();
+    let inserting_started = Instant::now();
     let outcome =
         tauri::async_runtime::spawn_blocking(move || insertion::insert(&payload, &target)).await;
+    tracing::info!(
+        insert_ms = inserting_started.elapsed().as_millis() as u64,
+        "text inserted"
+    );
 
     // The transcript is delivered (or on the clipboard); the audio has done
     // its job either way.

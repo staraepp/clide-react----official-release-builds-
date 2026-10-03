@@ -263,7 +263,13 @@ fn open_stream(level: Arc<AtomicU32>, tap: TapSlot) -> Result<Active, AudioError
         .play()
         .map_err(|e| AudioError::DeviceUnavailable(e.to_string()))?;
 
-    tracing::info!(sample_rate, channels, ?sample_format, "microphone open");
+    tracing::info!(
+        device = %device.name().unwrap_or_else(|_| "unknown".into()),
+        sample_rate,
+        channels,
+        ?sample_format,
+        "microphone open"
+    );
 
     Ok(Active {
         stream,
@@ -303,6 +309,11 @@ fn finish(session: Active, clip_dir: &std::path::Path) -> Result<RecordedClip, A
     // Measured here, judged by the pipeline: live typing may already have
     // heard words a strict threshold would miss.
     let stats = super::speech::analyze(&samples);
+    tracing::info!(
+        seconds = samples.len() as f32 / TARGET_SAMPLE_RATE as f32,
+        speech_ms = stats.speech.as_millis() as u64,
+        "recording finished"
+    );
 
     // Trim a trailing DC tail if the device padded the buffer.
     while samples.last() == Some(&0) && samples.len() > 1 {

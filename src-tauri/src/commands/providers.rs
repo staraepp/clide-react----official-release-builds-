@@ -119,5 +119,7 @@ pub fn select_provider(
         settings.model_id = model_id.clone();
     })?;
 
+    state.providers.warm_up_in_background(&provider_id, &model_id);
+
     Ok(())
 }

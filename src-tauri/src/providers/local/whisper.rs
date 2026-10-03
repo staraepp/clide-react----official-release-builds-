@@ -111,6 +111,20 @@ impl TranscriptionProvider for LocalWhisperProvider {
         "whisper-large-v3-turbo"
     }
 
+    fn warm_up(&self, model: &str) {
+        let Ok(weights) = self.weights_for(model) else {
+            return;
+        };
+        let mut guard = self.loaded.lock().unwrap_or_else(|e| e.into_inner());
+        if let Err(error) = ensure_loaded(&mut guard, &weights) {
+            tracing::warn!(%error, "could not preload the speech model");
+        }
+    }
+
+    fn unload(&self) {
+        *self.loaded.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
     async fn transcribe(
         &self,
         request: TranscriptionRequest,
@@ -145,6 +159,62 @@ impl TranscriptionProvider for LocalWhisperProvider {
     }
 }
 
+/// Encoder frames per second of audio. Whisper's encoder always looks at a
+/// 30-second window (1500 frames); a short dictation padded out to 30 seconds
+/// spends most of its time encoding silence.
+const ENCODER_FRAMES_PER_SECOND: f32 = 50.0;
+const FULL_WINDOW_FRAMES: i32 = 1500;
+/// Headroom past the end of the speech, and a floor below which accuracy
+/// suffers more than the speed-up is worth.
+const ENCODER_MARGIN_FRAMES: i32 = 150;
+const MIN_ENCODER_FRAMES: i32 = 500;
+
+/// How much of the encoder window this clip needs, or `None` for all of it.
+fn audio_context_for(samples: usize) -> Option<i32> {
+    let seconds = samples as f32 / 16_000.0;
+    let needed = (seconds * ENCODER_FRAMES_PER_SECOND).ceil() as i32 + ENCODER_MARGIN_FRAMES;
+    // Whisper reads the context in blocks of eight frames.
+    let rounded = (needed + 7) / 8 * 8;
+    let context = rounded.max(MIN_ENCODER_FRAMES);
+    (context < FULL_WINDOW_FRAMES).then_some(context)
+}
+
+/// Make `weights` the resident model, loading it if it is not already.
+fn ensure_loaded(loaded: &mut Loaded, weights: &std::path::Path) -> Result<(), ProviderError> {
+    use whisper_rs::{WhisperContext, WhisperContextParameters};
+
+    if matches!(loaded.as_ref(), Some((path, _)) if path == weights) {
+        return Ok(());
+    }
+
+    let failure = |detail: String| ProviderError::BadRequest {
+        provider: PROVIDER_ID,
+        detail,
+    };
+
+    // Drop the old model first so two large models are never resident at once
+    // while the new one loads.
+    *loaded = None;
+
+    let started = Instant::now();
+    let context = WhisperContext::new_with_params(
+        weights.to_string_lossy().as_ref(),
+        WhisperContextParameters::default(),
+    )
+    .map_err(|e| failure(format!("the model could not be loaded: {e}")))?;
+
+    let state = context
+        .create_state()
+        .map_err(|e| failure(format!("the model could not be started: {e}")))?;
+
+    tracing::info!(
+        load_ms = started.elapsed().as_millis() as u64,
+        "speech model loaded"
+    );
+    *loaded = Some((weights.to_path_buf(), state));
+    Ok(())
+}
+
 fn run_whisper(
     loaded: &Mutex<Loaded>,
     weights: &std::path::Path,
@@ -152,7 +222,7 @@ fn run_whisper(
     language: Option<&str>,
     prompt: Option<&str>,
 ) -> Result<String, ProviderError> {
-    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+    use whisper_rs::{FullParams, SamplingStrategy};
 
     let failure = |detail: String| ProviderError::BadRequest {
         provider: PROVIDER_ID,
@@ -162,24 +232,7 @@ fn run_whisper(
     // Held for the whole run: two dictations never overlap, and a second one
     // waiting for the first is correct, not a problem.
     let mut guard = loaded.lock().unwrap_or_else(|e| e.into_inner());
-
-    if !matches!(guard.as_ref(), Some((path, _)) if path == weights) {
-        // Drop the old model first so two large models are never resident at
-        // once while the new one loads.
-        *guard = None;
-
-        let context = WhisperContext::new_with_params(
-            weights.to_string_lossy().as_ref(),
-            WhisperContextParameters::default(),
-        )
-        .map_err(|e| failure(format!("the model could not be loaded: {e}")))?;
-
-        let state = context
-            .create_state()
-            .map_err(|e| failure(format!("the model could not be started: {e}")))?;
-
-        *guard = Some((weights.to_path_buf(), state));
-    }
+    ensure_loaded(&mut guard, weights)?;
 
     let Some((_, state)) = guard.as_mut() else {
         return Err(failure("the model could not be loaded".into()));
@@ -188,7 +241,14 @@ fn run_whisper(
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     // Dictation wants the words that were said, not a creative reading.
     params.set_temperature(0.0);
-    params.set_translate(false);
+    // No retries at higher temperatures. Whisper re-decodes a segment up to
+    // five times when its confidence looks low, which short clips with a
+    // vocabulary prompt trigger constantly — and a creative second attempt is
+    // the opposite of what dictation wants.
+    params.set_temperature_inc(0.0);
+    if let Some(context) = audio_context_for(audio.len()) {
+        params.set_audio_ctx(context);
+    }
     // Whisper's own silence guards, as a second line behind the recorder's
     // speech check: don't emit blank tokens, and drop segments it believes
     // contain no speech.
@@ -224,6 +284,72 @@ fn run_whisper(
     }
 
     Ok(text.trim().to_string())
+}
+
+/// Timing harness, not a test: `cargo test --release bench_whisper -- --ignored --nocapture`
+/// with `CLIDE_BENCH_MODEL` (a ggml .bin) and `CLIDE_BENCH_WAV` (16 kHz mono).
+/// Put a matching `-encoder.mlmodelc` next to the model to measure the Neural
+/// Engine against the Metal GPU on the same clip.
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    #[test]
+    #[ignore = "needs a model on disk"]
+    fn bench_whisper() {
+        let model = std::env::var("CLIDE_BENCH_MODEL").expect("CLIDE_BENCH_MODEL");
+        let wav = std::env::var("CLIDE_BENCH_WAV").expect("CLIDE_BENCH_WAV");
+        let audio = crate::providers::local::audio::read_wav_as_mono_f32(std::path::Path::new(&wav))
+            .expect("wav");
+        let loaded: Mutex<Loaded> = Mutex::new(None);
+        // The prompt Clide really sends in a developer app, so the timings
+        // include what the glossary costs.
+        let prompt = std::env::var("CLIDE_BENCH_PROMPT").ok().map(|_| {
+            format!(
+                "{} {}",
+                crate::context::KNOWN_NAMES,
+                crate::context::TECHNICAL_VOCABULARY
+            )
+        });
+
+        for run in 1..=4 {
+            let started = Instant::now();
+            let text = run_whisper(&loaded, std::path::Path::new(&model), &audio, Some("en"), prompt.as_deref())
+                .expect("transcribe");
+            println!(
+                "run {run}: {:>6} ms  ({:.1}s of audio)  {}",
+                started.elapsed().as_millis(),
+                audio.len() as f32 / 16_000.0,
+                text.trim()
+            );
+        }
+        *loaded.lock().unwrap() = None;
+    }
+}
+
+#[cfg(test)]
+mod audio_context_tests {
+    use super::audio_context_for;
+
+    #[test]
+    fn short_clips_use_a_small_window() {
+        // Both sit under the floor, so both get the 10-second window.
+        assert_eq!(audio_context_for(16_000), Some(500));
+        assert_eq!(audio_context_for(5 * 16_000), Some(500));
+    }
+
+    #[test]
+    fn the_window_grows_with_the_clip_in_blocks_of_eight() {
+        let context = audio_context_for(15 * 16_000).unwrap();
+        assert_eq!(context, 904);
+        assert_eq!(context % 8, 0);
+    }
+
+    #[test]
+    fn long_clips_use_the_whole_window() {
+        assert_eq!(audio_context_for(28 * 16_000), None);
+        assert_eq!(audio_context_for(120 * 16_000), None);
+    }
 }
 
 #[cfg(test)]
