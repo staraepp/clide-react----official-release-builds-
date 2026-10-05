@@ -13,13 +13,35 @@ https://clide.staraep.fun.
 Read `blueprint.md` (product truth) and `AGENTS.md` (engineering rules) first —
 this file only records *state of the build*, never product decisions.
 
-**Last updated:** 2026-10-01, v2.0.0: local-only, redesign, HUD pill, live typing.
+**Last updated:** 2026-10-05, v2.1.0: Local API (loopback HTTP: health, models, transcription, events).
 
 > Update this file at every milestone, not at the end of a session. The user
 > asked for this explicitly and repeatedly. A milestone is: a decision made, a
 > file group rewritten, a build passing or failing, a test run.
 
 ---
+
+# LOCAL API v1 (2026-10-05, v2.1.0)
+
+Optional, off by default, `127.0.0.1` only, bearer token on every request.
+Endpoints: `GET /v1/health`, `GET /v1/models`, `POST /v1/audio/transcriptions`,
+`GET /v1/events` (SSE). No start/stop/toggle endpoints (planned v1.1).
+
+- Backend: `src-tauri/src/api/{mod,auth,routes,bus,token}.rs` (axum 0.8 on tauri's
+  tokio runtime; `ApiServer` aborts on drop so toggling off closes the port).
+  `audio/decode.rs` decodes uploads via AVAudioFile (wav/m4a/mp3/flac/caf/aiff;
+  webm/ogg -> 415). `dictation/text.rs::finish_text` is the shared
+  backtrack/names/processing/Rewrite step used by both the dictation pipeline
+  and the API.
+- Events are published from `dictation/events.rs::emit_state`, the level ticker
+  in `pipeline.rs`, and `live.rs::consume` (partials). No-op without listeners.
+- Settings keys `localapi.enabled|port|origins|transcription|events`; token in
+  KV `localapi.bearer`, deliberately NOT in `AppSettings`.
+- UI: `src/settings/LocalApiSection.tsx`, `src/components/TextField.tsx`.
+- Docs: README "Local API", root `CHANGELOG.md`, AGENTS.md exceptions.
+- Website privacy page (repo Clide-website) still needs one sentence about the
+  optional loopback API; not edited from this repo.
+- Not yet verified with a real voice dictation feeding `/v1/events`.
 
 # LOCAL-ONLY PIVOT (2026-10-01) — Phase 1 of 3 done
 

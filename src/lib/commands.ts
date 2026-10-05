@@ -19,6 +19,7 @@ import type {
   DictationBehavior,
   DictationState,
   HistoryQuery,
+  LocalApiStatus,
   PermissionSnapshot,
   ProcessingMode,
   ProviderDescriptor,
@@ -160,6 +161,22 @@ export const setTechnicalVocabulary = (setting: TechnicalVocabulary) =>
 
 export const setRefineModel = (model: string | null) =>
   invoke<void>("set_refine_model", { model });
+
+export const setLocalApiEnabled = (enabled: boolean) =>
+  invoke<void>("set_local_api_enabled", { enabled });
+export const setLocalApiPort = (port: number) =>
+  invoke<void>("set_local_api_port", { port });
+export const setLocalApiOrigins = (origins: string[]) =>
+  invoke<void>("set_local_api_origins", { origins });
+export const setLocalApiEndpoints = (
+  transcription: boolean,
+  eventsEnabled: boolean,
+) => invoke<void>("set_local_api_endpoints", { transcription, eventsEnabled });
+export const getLocalApiStatus = () =>
+  invoke<LocalApiStatus>("get_local_api_status");
+export const getLocalApiToken = () => invoke<string>("get_local_api_token");
+export const regenerateLocalApiToken = () =>
+  invoke<string>("regenerate_local_api_token");
 
 export const setLiveTyping = (enabled: boolean) =>
   invoke<void>("set_live_typing", { enabled });

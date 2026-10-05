@@ -5,6 +5,7 @@ import { ShortcutRecorder } from "@/components/ShortcutRecorder";
 import { Button } from "@/components/Button";
 import { RefineSection } from "./RefineSection";
 import { AboutSection } from "./AboutSection";
+import { LocalApiSection } from "./LocalApiSection";
 import * as commands from "@/lib/commands";
 import type { SystemStatus } from "@/lib/types";
 
@@ -182,6 +183,13 @@ export function SettingsView({
             </p>
           )}
         </div>
+      </Section>
+
+      <Section
+        title="Local API"
+        description="Lets another app on this Mac transcribe audio with Clide or follow its recording state. Off unless you turn it on."
+      >
+        <LocalApiSection status={status} refresh={refresh} />
       </Section>
 
       <Section

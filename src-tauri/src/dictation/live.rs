@@ -98,9 +98,10 @@ pub fn begin(app: &AppHandle, language: Option<String>) -> bool {
     let (settled_tx, settled_rx) = mpsc::channel();
 
     let consumer_shared = Arc::clone(&shared);
+    let consumer_app = app.clone();
     let spawned = std::thread::Builder::new()
         .name("clide-live-typing".into())
-        .spawn(move || consume(events, consumer_shared, settled_tx));
+        .spawn(move || consume(consumer_app, events, consumer_shared, settled_tx));
     if spawned.is_err() {
         return false;
     }
@@ -164,7 +165,7 @@ pub fn finish(app: &AppHandle) -> Option<LiveOutcome> {
     Some(LiveOutcome { text })
 }
 
-fn consume(events: Receiver<LiveEvent>, shared: Arc<Shared>, settled: Sender<()>) {
+fn consume(app: AppHandle, events: Receiver<LiveEvent>, shared: Arc<Shared>, settled: Sender<()>) {
     let mut typer = WordTyper::default();
 
     while let Ok(event) = events.recv() {
@@ -180,6 +181,12 @@ fn consume(events: Receiver<LiveEvent>, shared: Arc<Shared>, settled: Sender<()>
                 (String::new(), true)
             }
         };
+
+        // The full hypothesis, for the local API's `partial` events: what has
+        // been recognised so far, before the typer holds back unsettled words.
+        if !hypothesis.is_empty() {
+            app.state::<AppState>().events.publish_partial(&hypothesis);
+        }
 
         if let Some(delta) = typer.next(&hypothesis, is_final) {
             let delta = apply_known_names(&delta);

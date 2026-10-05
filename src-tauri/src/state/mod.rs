@@ -24,6 +24,10 @@ pub struct AppState {
     pub session: DictationSession,
     /// The live-typing session attached to the dictation in progress, if any.
     pub live: crate::dictation::live::LiveSlot,
+    /// What Clide is doing, as the local API's event stream sees it.
+    pub events: crate::api::bus::EventBus,
+    /// The running local API server, if it is switched on.
+    pub api: crate::api::ApiSlot,
 
     /// Cached copy of the persisted preferences. The database stays the
     /// source of truth; this exists so the audio and shortcut paths never
@@ -71,6 +75,8 @@ impl AppState {
             refiners,
             session: DictationSession::new(),
             live: Mutex::new(None),
+            events: crate::api::bus::EventBus::new(),
+            api: Mutex::new(crate::api::ApiRuntime::default()),
             settings: Mutex::new(settings),
             registered_shortcut: Mutex::new(None),
         }

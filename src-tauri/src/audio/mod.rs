@@ -1,6 +1,7 @@
 //! Microphone capture and the lifetime of the audio it produces.
 
 pub mod clip;
+pub mod decode;
 pub mod ducking;
 pub mod error;
 pub mod recorder;

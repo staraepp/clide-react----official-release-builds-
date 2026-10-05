@@ -76,8 +76,8 @@ AFTER UPDATE ON transcripts BEGIN
     INSERT INTO transcripts_fts (rowid, text) VALUES (new.rowid, new.text);
 END;
 
--- Non-secret preferences, JSON-encoded. Credentials live in their dedicated
--- store and never enter SQLite.
+-- Preferences, JSON-encoded. Nothing secret, except the one recorded exception:
+-- the local API's bearer token (see AGENTS.md).
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL
