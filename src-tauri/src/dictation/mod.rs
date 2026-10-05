@@ -7,6 +7,7 @@ pub mod live;
 pub mod machine;
 pub mod pipeline;
 pub mod session;
+pub mod text;
 
 pub use machine::{DictationBehavior, DictationState};
 pub use session::DictationSession;

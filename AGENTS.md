@@ -369,6 +369,20 @@ network traffic allowed is downloading models the user chose, the
 once-a-day release check, and the signed update package the user chose to
 install (Settings -> About). Nothing in the app opens a web browser.
 
+Two recorded exceptions (added with the Local API, v2.1.0):
+
+- **Loopback API.** An optional, off-by-default HTTP server (`src-tauri/src/api/`)
+  may listen on `127.0.0.1` only. It never binds another interface, never makes
+  outbound requests, requires a bearer token on every request, and rejects a
+  foreign `Host` or any unlisted `Origin`. It exposes health, models,
+  transcription of uploaded files and a read-only event stream. It must not
+  start/stop dictation or insert text without a new decision.
+- **Bearer token in SQLite.** The API token is stored in the app's KV table
+  (`localapi.bearer`), by user decision, not in the Keychain. It must stay out
+  of `AppSettings`, `settings:changed` payloads, `get_system_status` and logs;
+  only `get_local_api_token` / `regenerate_local_api_token` return it. It is the
+  only credential allowed in that table.
+
 # Local models
 
 Local models are first-class providers, not hacks bolted onto cloud logic.

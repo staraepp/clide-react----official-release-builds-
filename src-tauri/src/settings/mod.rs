@@ -52,7 +52,17 @@ mod keys {
     pub const TECHNICAL_VOCABULARY: &str = "dictation.technical_vocabulary";
     pub const FORMAT_TECHNICAL: &str = "processing.format_technical";
     pub const LIVE_TYPING: &str = "dictation.live_typing";
+    pub const API_ENABLED: &str = "localapi.enabled";
+    pub const API_PORT: &str = "localapi.port";
+    pub const API_ORIGINS: &str = "localapi.origins";
+    pub const API_TRANSCRIPTION: &str = "localapi.transcription";
+    pub const API_EVENTS: &str = "localapi.events";
 }
+
+/// The port the local API listens on unless the user picks another.
+pub const DEFAULT_API_PORT: u16 = 47815;
+/// Ports below this need privileges and collide with system services.
+pub const MIN_API_PORT: u16 = 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,6 +101,17 @@ pub struct AppSettings {
     /// can stream. Skips Rewrite and spoken corrections, which need the whole
     /// recording.
     pub live_typing: bool,
+    /// The optional loopback HTTP API. Off by default.
+    ///
+    /// Its bearer token is deliberately *not* a field here: this struct is sent
+    /// to the window and in `settings:changed` payloads, and the token must
+    /// only ever leave through `get_local_api_token`.
+    pub local_api_enabled: bool,
+    pub local_api_port: u16,
+    /// Origins allowed to call the API from a browser. Empty means none.
+    pub local_api_allowed_origins: Vec<String>,
+    pub local_api_transcription: bool,
+    pub local_api_events: bool,
     pub onboarding_complete: bool,
 }
 
@@ -113,6 +134,11 @@ impl AppSettings {
             technical_vocabulary: TechnicalVocabulary::default(),
             format_technical_terms: false,
             live_typing: true,
+            local_api_enabled: false,
+            local_api_port: DEFAULT_API_PORT,
+            local_api_allowed_origins: Vec::new(),
+            local_api_transcription: true,
+            local_api_events: true,
             onboarding_complete: false,
         }
     }
@@ -181,6 +207,27 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
             .ok()
             .flatten()
             .unwrap_or(defaults.live_typing),
+        local_api_enabled: kv::get(connection, keys::API_ENABLED)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.local_api_enabled),
+        local_api_port: kv::get(connection, keys::API_PORT)
+            .ok()
+            .flatten()
+            .filter(|port| *port >= MIN_API_PORT)
+            .unwrap_or(defaults.local_api_port),
+        local_api_allowed_origins: kv::get(connection, keys::API_ORIGINS)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.local_api_allowed_origins),
+        local_api_transcription: kv::get(connection, keys::API_TRANSCRIPTION)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.local_api_transcription),
+        local_api_events: kv::get(connection, keys::API_EVENTS)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.local_api_events),
         visual_intensity: kv::get(connection, keys::INTENSITY)
             .ok()
             .flatten()
@@ -245,6 +292,19 @@ pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result
         &settings.format_technical_terms,
     )?;
     kv::set(connection, keys::LIVE_TYPING, &settings.live_typing)?;
+    kv::set(connection, keys::API_ENABLED, &settings.local_api_enabled)?;
+    kv::set(connection, keys::API_PORT, &settings.local_api_port)?;
+    kv::set(
+        connection,
+        keys::API_ORIGINS,
+        &settings.local_api_allowed_origins,
+    )?;
+    kv::set(
+        connection,
+        keys::API_TRANSCRIPTION,
+        &settings.local_api_transcription,
+    )?;
+    kv::set(connection, keys::API_EVENTS, &settings.local_api_events)?;
     kv::set(connection, keys::ONBOARDING, &settings.onboarding_complete)?;
     Ok(())
 }
@@ -365,6 +425,25 @@ mod tests {
         assert!(!reconcile(&mut settings, &providers, &refiners));
         assert_eq!(settings.provider_id, "local-whisper");
         assert_eq!(settings.model_id, "whisper-base");
+    }
+
+    /// The API's bearer token is the one secret that lives in the settings
+    /// table (a decision recorded in AGENTS.md). It must stay out of the struct
+    /// that is sent to the window and written to logs.
+    #[test]
+    fn the_local_api_token_is_never_part_of_app_settings() {
+        let settings = AppSettings::defaults("apple", "apple-speech");
+        let json = serde_json::to_string(&settings).unwrap().to_lowercase();
+        assert!(!json.contains("token") && !json.contains("bearer") && !json.contains("secret"));
+    }
+
+    #[test]
+    fn the_local_api_is_off_by_default_with_both_endpoints_ready() {
+        let settings = AppSettings::defaults("apple", "apple-speech");
+        assert!(!settings.local_api_enabled);
+        assert_eq!(settings.local_api_port, DEFAULT_API_PORT);
+        assert!(settings.local_api_allowed_origins.is_empty());
+        assert!(settings.local_api_transcription && settings.local_api_events);
     }
 
     #[test]

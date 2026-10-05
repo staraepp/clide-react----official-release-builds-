@@ -1,6 +1,7 @@
 //! Generic JSON key/value storage for non-secret preferences.
 //!
-//! Secrets never come through here — they go to the Keychain. This table holds
+//! Nothing secret belongs here, with one recorded exception: the local API's
+//! bearer token (see `api::token` and AGENTS.md). This table otherwise holds
 //! things like the chosen shortcut and visual intensity.
 
 use rusqlite::{Connection, OptionalExtension};

@@ -297,6 +297,102 @@ pub fn set_live_typing(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+// --- local API -------------------------------------------------------------
+
+/// Switch the loopback API on or off. Off means the port is closed at once.
+#[tauri::command]
+pub fn set_local_api_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.local_api_enabled = enabled)?;
+    crate::api::apply(&app);
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_local_api_port(app: AppHandle, port: u32) -> Result<(), String> {
+    let port = u16::try_from(port)
+        .ok()
+        .filter(|port| *port >= crate::settings::MIN_API_PORT)
+        .ok_or_else(|| {
+            format!(
+                "Choose a port between {} and 65535.",
+                crate::settings::MIN_API_PORT
+            )
+        })?;
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.local_api_port = port)?;
+    crate::api::apply(&app);
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Web origins allowed to call the API from a browser. Empty by default.
+#[tauri::command]
+pub fn set_local_api_origins(app: AppHandle, origins: Vec<String>) -> Result<(), String> {
+    let mut cleaned: Vec<String> = Vec::new();
+    for origin in origins {
+        let origin = origin.trim().trim_end_matches('/').to_string();
+        if origin.is_empty() {
+            continue;
+        }
+        if !(origin.starts_with("http://") || origin.starts_with("https://")) || origin.contains(' ')
+        {
+            return Err(format!(
+                "\"{origin}\" is not an origin. Use the form http://localhost:3000."
+            ));
+        }
+        if !cleaned.contains(&origin) {
+            cleaned.push(origin);
+        }
+    }
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.local_api_allowed_origins = cleaned)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_local_api_endpoints(
+    app: AppHandle,
+    transcription: bool,
+    events_enabled: bool,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| {
+        settings.local_api_transcription = transcription;
+        settings.local_api_events = events_enabled;
+    })?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_local_api_status(app: AppHandle) -> crate::api::ApiStatus {
+    crate::api::status(&app)
+}
+
+/// The bearer token, created the first time it is asked for.
+#[tauri::command]
+pub fn get_local_api_token(app: AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let token = crate::api::token::load_or_create(&state.db.lock());
+    token.map_err(|error| error.to_string())
+}
+
+/// Replace the token. Clients using the old one are refused from now on, and
+/// open event streams end.
+#[tauri::command]
+pub fn regenerate_local_api_token(app: AppHandle) -> Result<String, String> {
+    let token = {
+        let state = app.state::<AppState>();
+        let token = crate::api::token::regenerate(&state.db.lock());
+        token.map_err(|error| error.to_string())?
+    };
+    crate::api::restart(&app);
+    Ok(token)
+}
+
 /// Switch a refinement engine on or off.
 ///
 /// Explicit rather than automatic: Rewrite only runs an engine the user has

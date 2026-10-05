@@ -1,6 +1,6 @@
 [package]
 name = "clide"
-version = "2.0.0"
+version = "2.1.0"
 description = "Clide — system-wide dictation for macOS"
 edition = "2021"
 rust-version = "1.77"
@@ -24,7 +24,7 @@ foundation-models = { version = "0.11", features = ["macos_26_0", "async"] }
 # Apple's built-in speech recognition.
 objc2-speech = "0.3"
 objc2-foundation = "0.3"
-objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioFormat", "AVAudioTypes"] }
+objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioFile", "AVAudioFormat", "AVAudioTypes"] }
 objc2 = "0.6"
 block2 = "0.6"
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
@@ -35,8 +35,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
 async-trait = "0.1"
+# The optional loopback API (off by default). hyper and tower are already in the
+# tree through reqwest and tauri; axum is the thin routing layer on top.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "multipart", "query"] }
+subtle = "2"
+getrandom = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
@@ -56,6 +61,9 @@ core-foundation = "0.10"
 core-graphics = { version = "0.24", features = ["elcapitan"] }
 objc2 = "0.6"
 block2 = "0.6"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 codegen-units = 1

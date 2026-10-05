@@ -1,9 +1,10 @@
 //! Clide — system-wide dictation for macOS.
 //!
 //! Rust owns everything native: the microphone, the global shortcut, provider
-//! requests, the Accessibility integration, the Keychain, and persistence.
+//! requests, the Accessibility integration, and persistence.
 //! React owns presentation and nothing else.
 
+pub mod api;
 pub mod audio;
 pub mod commands;
 pub mod context;
@@ -105,6 +106,13 @@ pub fn run() {
             commands::settings::set_refine_model,
             commands::settings::set_format_technical_terms,
             commands::settings::set_live_typing,
+            commands::settings::set_local_api_enabled,
+            commands::settings::set_local_api_port,
+            commands::settings::set_local_api_origins,
+            commands::settings::set_local_api_endpoints,
+            commands::settings::get_local_api_status,
+            commands::settings::get_local_api_token,
+            commands::settings::regenerate_local_api_token,
             commands::dictation::begin_transcript_drag,
             commands::settings::set_refine_style,
             commands::settings::get_about,
@@ -120,6 +128,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // Free the loaded speech model before the process tears down
                 // its GPU state around it; see `TranscriptionProvider::unload`.
+                api::shutdown(app);
                 if let Some(state) = app.try_state::<AppState>() {
                     state.providers.unload_all();
                 }
@@ -163,6 +172,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .providers
             .warm_up_in_background(&settings.provider_id, &settings.model_id);
     }
+
+    // Start the local API if the user has switched it on.
+    api::apply(&handle);
 
     // Register the configured shortcut. A failure here is reported through
     // system status rather than being fatal: the app is still usable, and the

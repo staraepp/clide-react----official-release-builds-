@@ -10,9 +10,10 @@
 //!   animation) without diffing state.
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::machine::DictationState;
+use crate::state::AppState;
 
 pub const STATE: &str = "dictation:state";
 pub const LEVEL: &str = "dictation:level";
@@ -74,6 +75,18 @@ pub struct StartedPayload {
 pub fn emit_state(app: &AppHandle, state: &DictationState) {
     if let Err(error) = app.emit(STATE, state) {
         tracing::warn!(?error, "could not emit dictation state");
+    }
+
+    // The same change, for the local API's event stream.
+    if let Some(app_state) = app.try_state::<AppState>() {
+        let settings = app_state.settings();
+        let mode = serde_json::to_value(settings.mode)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default();
+        app_state
+            .events
+            .publish_state(state, &mode, &settings.model_id);
     }
 }
 

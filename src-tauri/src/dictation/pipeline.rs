@@ -17,12 +17,12 @@ use crate::audio::AudioError;
 use crate::database::{now_ms, transcripts};
 use crate::dictation::events;
 use crate::dictation::live;
+use crate::dictation::text;
 use crate::dictation::machine::{DictationInput, DictationState, FailureStage};
 use crate::hud;
 use crate::insertion;
 use crate::processing;
 use crate::providers::{AudioClip, TranscriptionRequest};
-use crate::refine::{accepts_refinement, RefineRequest, RefineStyle};
 use crate::state::AppState;
 
 /// How often the HUD waveform is refreshed. 30 Hz is smooth to the eye and
@@ -444,109 +444,7 @@ async fn process(app: &AppHandle, raw: String) -> Option<String> {
     events::emit_bare(app, events::PROCESSING_STARTED);
 
     let processing_started = Instant::now();
-    let (mode, style, engines, spoken, format_technical, refine_model) = {
-        let settings = state.settings();
-        (
-            settings.mode,
-            settings.refine_style,
-            settings.refine_engines,
-            settings.spoken_punctuation,
-            settings.format_technical_terms,
-            settings.refine_model,
-        )
-    };
-
-    // Spoken corrections come first: a command phrase is never meant to be
-    // typed, and everything after this point should see the text the user
-    // actually meant.
-    let corrected = processing::backtrack::apply_backtracking(&raw);
-    if corrected.corrections > 0 {
-        tracing::info!(count = corrected.corrections, "spoken corrections applied");
-        events::emit(
-            app,
-            events::CORRECTION_APPLIED,
-            events::CorrectionPayload {
-                count: corrected.corrections,
-            },
-        );
-    }
-
-    // The user scratched everything they said. There is nothing to insert, and
-    // `processing::process` would helpfully resurrect the raw text, so stop
-    // here and treat it as a cancelled dictation.
-    if corrected.text.trim().is_empty() && corrected.corrections > 0 {
-        if let Ok(next) = state.session.apply(DictationInput::Cancel) {
-            events::emit_state(app, &next);
-        }
-        state.session.release_audio();
-        hud::hide(app);
-        return None;
-    }
-
-    // Spelling of the names Clide is asked to write most. Always on: it needs
-    // no model and is the same in every mode.
-    let corrected_text = processing::names::apply_known_names(&corrected.text);
-
-    // Opt-in: spoken paths become code spans before Polish, which knows to
-    // leave them alone, and before Rewrite, which is told to copy them.
-    let raw = if format_technical {
-        processing::techformat::format_technical(&corrected_text)
-    } else {
-        corrected_text
-    };
-
-    match processing::process(mode, &raw, spoken) {
-        Ok(text) => {
-            let text = if mode == processing::ProcessingMode::Rewrite {
-                refine_text(app, text, style, &engines, refine_model).await
-            } else {
-                text
-            };
-
-            tracing::info!(
-                processing_ms = processing_started.elapsed().as_millis() as u64,
-                rewrite = (mode == processing::ProcessingMode::Rewrite),
-                "text processed"
-            );
-            events::emit(
-                app,
-                events::PROCESSING_COMPLETE,
-                events::TextPayload { text: text.clone() },
-            );
-            Some(text)
-        }
-        Err(error) => {
-            // The transcript survives: the failure state carries it so the UI
-            // can still offer Copy.
-            let next = state.session.apply(DictationInput::Failed {
-                stage: FailureStage::Processing,
-                message: error.to_string(),
-                retryable: false,
-                transcript: Some(raw),
-                on_clipboard: false,
-            });
-            if let Ok(next) = next {
-                events::emit_state(app, &next);
-            }
-            hud::show(app);
-            None
-        }
-    }
-}
-
-/// Rewrite the transcript, keeping the deterministic result if that fails.
-///
-/// Refinement is a nicety layered on words the user has already said. A model
-/// that is switched off, still downloading, or simply unhappy must never cost
-/// them the transcript — so every failure here logs and returns the input.
-async fn refine_text(
-    app: &AppHandle,
-    text: String,
-    style: RefineStyle,
-    engines: &[String],
-    model: Option<String>,
-) -> String {
-    let state = app.state::<AppState>();
+    let settings = state.settings();
 
     // Only the app's name, and never Clide itself: context level 1.
     let target = state.session.target();
@@ -556,38 +454,60 @@ async fn refine_text(
         target.app_name.clone()
     };
 
-    let Some(refiner) = state.refiners.first_enabled(engines) else {
-        tracing::debug!("rewrite requested but no enabled refinement engine can run");
-        return text;
+    let finished = match text::finish_text(&state, &raw, &settings, app_name).await {
+        Ok(finished) => finished,
+        Err(failure) => {
+            // The transcript survives: the failure state carries it so the UI
+            // can still offer Copy.
+            let next = state.session.apply(DictationInput::Failed {
+                stage: FailureStage::Processing,
+                message: failure.message,
+                retryable: false,
+                transcript: Some(failure.transcript),
+                on_clipboard: false,
+            });
+            if let Ok(next) = next {
+                events::emit_state(app, &next);
+            }
+            hud::show(app);
+            return None;
+        }
     };
 
-    match refiner
-        .refine(RefineRequest {
-            text: text.clone(),
-            style,
-            model,
-            app: app_name,
-        })
-        .await
-    {
-        Ok(refined) if accepts_refinement(&text, &refined) => {
-            tracing::info!(engine = refiner.id(), "transcript refined");
-            refined
-        }
-        Ok(refined) => {
-            tracing::warn!(
-                engine = refiner.id(),
-                original_words = text.split_whitespace().count(),
-                refined_words = refined.split_whitespace().count(),
-                "refinement looked lossy or wrapped; keeping the transcript"
-            );
-            text
-        }
-        Err(error) => {
-            tracing::warn!(engine = refiner.id(), %error, "refinement failed; keeping the transcript");
-            text
-        }
+    if finished.corrections > 0 {
+        events::emit(
+            app,
+            events::CORRECTION_APPLIED,
+            events::CorrectionPayload {
+                count: finished.corrections,
+            },
+        );
     }
+
+    // The user scratched everything they said: nothing to insert, so treat it
+    // as a cancelled dictation.
+    if finished.scratched_all {
+        if let Ok(next) = state.session.apply(DictationInput::Cancel) {
+            events::emit_state(app, &next);
+        }
+        state.session.release_audio();
+        hud::hide(app);
+        return None;
+    }
+
+    tracing::info!(
+        processing_ms = processing_started.elapsed().as_millis() as u64,
+        rewrite = (settings.mode == processing::ProcessingMode::Rewrite),
+        "text processed"
+    );
+    events::emit(
+        app,
+        events::PROCESSING_COMPLETE,
+        events::TextPayload {
+            text: finished.text.clone(),
+        },
+    );
+    Some(finished.text)
 }
 
 /// Save before inserting.
@@ -774,18 +694,15 @@ fn spawn_level_ticker(app: AppHandle) {
                 if state.session.epoch() != epoch || !state.session.state().is_capturing() {
                     break;
                 }
-                events::emit(
-                    &app,
-                    events::LEVEL,
-                    events::LevelPayload {
-                        level: state.recorder.level(),
-                    },
-                );
+                let level = state.recorder.level();
+                events::emit(&app, events::LEVEL, events::LevelPayload { level });
+                state.events.publish_level(level);
             }
             tokio::time::sleep(LEVEL_INTERVAL).await;
         }
 
         events::emit(&app, events::LEVEL, events::LevelPayload { level: 0.0 });
+        app.state::<AppState>().events.publish_level(0.0);
     });
 }
 

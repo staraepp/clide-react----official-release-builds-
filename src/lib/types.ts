@@ -61,6 +61,11 @@ export interface AppSettings {
   technicalVocabulary: TechnicalVocabulary;
   formatTechnicalTerms: boolean;
   liveTyping: boolean;
+  localApiEnabled: boolean;
+  localApiPort: number;
+  localApiAllowedOrigins: string[];
+  localApiTranscription: boolean;
+  localApiEvents: boolean;
   shortcut: string;
   behavior: DictationBehavior;
   mode: ProcessingMode;
@@ -280,6 +285,16 @@ export interface About {
   issues: string;
   license: string;
   tauriVersion: string;
+}
+
+/** The loopback API server, as the settings page shows it. */
+export interface LocalApiStatus {
+  running: boolean;
+  port: number;
+  /** `http://127.0.0.1:<port>` while it is listening. */
+  address: string | null;
+  /** Why it could not start, in words for the user. */
+  error: string | null;
 }
 
 /** The newest signed release, checked by the native app at most once a day. */
