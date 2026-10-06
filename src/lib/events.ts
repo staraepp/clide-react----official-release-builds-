@@ -25,6 +25,7 @@ export const EVENTS = {
   insertionComplete: "insertion:complete",
   insertionFailed: "insertion:failed",
   historyChanged: "history:changed",
+  dictionaryChanged: "dictionary:changed",
   settingsChanged: "settings:changed",
   navigate: "navigate",
   modelProgress: "model:progress",
@@ -65,6 +66,7 @@ interface EventMap {
   [EVENTS.insertionComplete]: null;
   [EVENTS.insertionFailed]: FailurePayload;
   [EVENTS.historyChanged]: null;
+  [EVENTS.dictionaryChanged]: null;
   [EVENTS.settingsChanged]: null;
   [EVENTS.navigate]: string;
   [EVENTS.modelProgress]: DownloadProgress;

@@ -58,6 +58,12 @@ pub async fn finish_text(
     // no model and is the same in every mode.
     let corrected_text = processing::names::apply_known_names(&corrected.text);
 
+    // The user's own spellings. Read before the first await: the database
+    // lock must not be held across one.
+    let user_words = crate::database::dictionary::manual_words(&state.db.lock())
+        .unwrap_or_default();
+    let corrected_text = processing::dictionary::apply_dictionary(&corrected_text, &user_words);
+
     // Opt-in: spoken paths become code spans before Polish, which knows to
     // leave them alone, and before Rewrite, which is told to copy them.
     let prepared = if settings.format_technical_terms {

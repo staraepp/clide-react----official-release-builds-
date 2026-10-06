@@ -52,6 +52,8 @@ mod keys {
     pub const TECHNICAL_VOCABULARY: &str = "dictation.technical_vocabulary";
     pub const FORMAT_TECHNICAL: &str = "processing.format_technical";
     pub const LIVE_TYPING: &str = "dictation.live_typing";
+    pub const LOWER_AUDIO: &str = "dictation.lower_audio";
+    pub const DICTIONARY_LEARN: &str = "dictionary.auto_learn";
     pub const API_ENABLED: &str = "localapi.enabled";
     pub const API_PORT: &str = "localapi.port";
     pub const API_ORIGINS: &str = "localapi.origins";
@@ -101,6 +103,11 @@ pub struct AppSettings {
     /// can stream. Skips Rewrite and spoken corrections, which need the whole
     /// recording.
     pub live_typing: bool,
+    /// Turn the Mac's output volume down while the microphone is open, so music
+    /// does not compete with the speaker. Always restored afterwards.
+    pub lower_audio_while_dictating: bool,
+    /// Add every word of a finished dictation to the dictionary.
+    pub dictionary_auto_learn: bool,
     /// The optional loopback HTTP API. Off by default.
     ///
     /// Its bearer token is deliberately *not* a field here: this struct is sent
@@ -134,6 +141,8 @@ impl AppSettings {
             technical_vocabulary: TechnicalVocabulary::default(),
             format_technical_terms: false,
             live_typing: true,
+            lower_audio_while_dictating: true,
+            dictionary_auto_learn: true,
             local_api_enabled: false,
             local_api_port: DEFAULT_API_PORT,
             local_api_allowed_origins: Vec::new(),
@@ -207,6 +216,14 @@ pub fn load(connection: &Connection, provider_id: &str, model_id: &str) -> AppSe
             .ok()
             .flatten()
             .unwrap_or(defaults.live_typing),
+        lower_audio_while_dictating: kv::get(connection, keys::LOWER_AUDIO)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.lower_audio_while_dictating),
+        dictionary_auto_learn: kv::get(connection, keys::DICTIONARY_LEARN)
+            .ok()
+            .flatten()
+            .unwrap_or(defaults.dictionary_auto_learn),
         local_api_enabled: kv::get(connection, keys::API_ENABLED)
             .ok()
             .flatten()
@@ -292,6 +309,16 @@ pub fn save(connection: &Connection, settings: &AppSettings) -> rusqlite::Result
         &settings.format_technical_terms,
     )?;
     kv::set(connection, keys::LIVE_TYPING, &settings.live_typing)?;
+    kv::set(
+        connection,
+        keys::LOWER_AUDIO,
+        &settings.lower_audio_while_dictating,
+    )?;
+    kv::set(
+        connection,
+        keys::DICTIONARY_LEARN,
+        &settings.dictionary_auto_learn,
+    )?;
     kv::set(connection, keys::API_ENABLED, &settings.local_api_enabled)?;
     kv::set(connection, keys::API_PORT, &settings.local_api_port)?;
     kv::set(
@@ -398,6 +425,24 @@ mod tests {
         let reloaded = load(&db.lock(), "apple", "apple-speech");
         assert!(reloaded.format_technical_terms);
         assert_eq!(reloaded.technical_vocabulary, TechnicalVocabulary::Always);
+    }
+
+    /// Existing installs have no row for either key, and both features were
+    /// already on (or are expected on), so a missing row must mean "on".
+    #[test]
+    fn audio_lowering_and_word_learning_default_on_and_persist() {
+        let db = Database::in_memory().unwrap();
+        let mut settings = load(&db.lock(), "apple", "apple-speech");
+        assert!(settings.lower_audio_while_dictating);
+        assert!(settings.dictionary_auto_learn);
+
+        settings.lower_audio_while_dictating = false;
+        settings.dictionary_auto_learn = false;
+        save(&db.lock(), &settings).unwrap();
+
+        let reloaded = load(&db.lock(), "apple", "apple-speech");
+        assert!(!reloaded.lower_audio_while_dictating);
+        assert!(!reloaded.dictionary_auto_learn);
     }
 
     #[test]

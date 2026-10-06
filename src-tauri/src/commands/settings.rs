@@ -297,6 +297,24 @@ pub fn set_live_typing(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Turn the Mac's volume down while recording. The level is always put back.
+#[tauri::command]
+pub fn set_lower_audio_while_dictating(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.lower_audio_while_dictating = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
+/// Add the words of each finished dictation to the dictionary.
+#[tauri::command]
+pub fn set_dictionary_auto_learn(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    state.update_settings(|settings| settings.dictionary_auto_learn = enabled)?;
+    events::emit_bare(&app, events::SETTINGS_CHANGED);
+    Ok(())
+}
+
 // --- local API -------------------------------------------------------------
 
 /// Switch the loopback API on or off. Off means the port is closed at once.

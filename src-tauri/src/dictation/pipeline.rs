@@ -49,8 +49,11 @@ pub async fn start(app: &AppHandle) {
     state.session.begin(target.clone());
 
     // Lower other apps' audio so the user's voice is the loudest thing in the
-    // room. Restored on every path out of capture — see `unduck_audio`.
-    state.session.duck_audio();
+    // room, if the user has asked for that. Restored on every path out of
+    // capture — see `unduck_audio`, which is harmless when nothing was lowered.
+    if state.settings().lower_audio_while_dictating {
+        state.session.duck_audio();
+    }
 
     start_live_typing(app);
 

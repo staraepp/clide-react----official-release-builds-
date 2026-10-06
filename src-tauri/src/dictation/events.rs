@@ -41,6 +41,9 @@ pub const INSERTION_FAILED: &str = "insertion:failed";
 /// A new row landed in history; the dashboard and history view refresh.
 pub const HISTORY_CHANGED: &str = "history:changed";
 
+/// Words were added to or removed from the dictionary.
+pub const DICTIONARY_CHANGED: &str = "dictionary:changed";
+
 /// Settings changed in the backend (e.g. a shortcut re-registration).
 pub const SETTINGS_CHANGED: &str = "settings:changed";
 

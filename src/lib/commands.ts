@@ -18,6 +18,9 @@ import type {
   AppSettings,
   DictationBehavior,
   DictationState,
+  DictionaryEntry,
+  DictionaryPage,
+  DictionaryQuery,
   HistoryQuery,
   LocalApiStatus,
   PermissionSnapshot,
@@ -183,3 +186,24 @@ export const setLiveTyping = (enabled: boolean) =>
 
 export const setFormatTechnicalTerms = (enabled: boolean) =>
   invoke<void>("set_format_technical_terms", { enabled });
+
+export const setLowerAudioWhileDictating = (enabled: boolean) =>
+  invoke<void>("set_lower_audio_while_dictating", { enabled });
+
+// --- dictionary ------------------------------------------------------------
+
+export const setDictionaryAutoLearn = (enabled: boolean) =>
+  invoke<void>("set_dictionary_auto_learn", { enabled });
+
+export const getDictionary = (query?: DictionaryQuery) =>
+  invoke<DictionaryPage>("get_dictionary", { query: query ?? null });
+
+/** Add a word, or turn a learned one into your own. Rejects with a reason. */
+export const addDictionaryWord = (word: string) =>
+  invoke<DictionaryEntry>("add_dictionary_word", { word });
+
+export const removeDictionaryWord = (word: string) =>
+  invoke<boolean>("remove_dictionary_word", { word });
+
+/** Forget every learned word. Words you added stay. */
+export const clearLearnedWords = () => invoke<number>("clear_learned_words");
