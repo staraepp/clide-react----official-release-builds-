@@ -124,9 +124,70 @@ pub fn vocabulary_prompt(
     })
 }
 
+/// How much of the user's dictionary is offered to the engine. Whisper reads
+/// only the tail of a long prompt, so more would crowd out what is already
+/// there rather than help.
+const DICTIONARY_PROMPT_CHARS: usize = 300;
+
+/// Add the user's own words to a vocabulary hint, most used first.
+///
+/// `None` stays `None`: no hint means the engine cannot take one.
+pub fn with_dictionary(prompt: Option<String>, words: &[String]) -> Option<String> {
+    let mut prompt = prompt?;
+
+    let mut listed = String::new();
+    for word in words {
+        let extra = word.chars().count() + 2;
+        if listed.chars().count() + extra > DICTIONARY_PROMPT_CHARS {
+            break;
+        }
+        if !listed.is_empty() {
+            listed.push_str(", ");
+        }
+        listed.push_str(word);
+    }
+
+    if !listed.is_empty() {
+        prompt.push_str(&format!(" My words: {listed}."));
+    }
+    Some(prompt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_users_words_join_the_hint_in_order() {
+        let words = vec!["Clide".to_string(), "T3 Code".to_string()];
+        assert_eq!(
+            with_dictionary(Some("Names: A.".into()), &words).as_deref(),
+            Some("Names: A. My words: Clide, T3 Code.")
+        );
+    }
+
+    #[test]
+    fn an_engine_that_takes_no_hint_still_takes_none() {
+        assert_eq!(with_dictionary(None, &["Clide".to_string()]), None);
+    }
+
+    #[test]
+    fn no_words_leaves_the_hint_alone() {
+        assert_eq!(
+            with_dictionary(Some("Names: A.".into()), &[]).as_deref(),
+            Some("Names: A.")
+        );
+    }
+
+    #[test]
+    fn a_long_dictionary_is_cut_at_a_whole_word() {
+        let words: Vec<String> = (0..200).map(|n| format!("word{n}")).collect();
+        let prompt = with_dictionary(Some(String::new()), &words).unwrap();
+        let listed = prompt.trim_start().trim_start_matches("My words: ");
+        assert!(listed.chars().count() <= DICTIONARY_PROMPT_CHARS + 2);
+        assert!(listed.starts_with("word0, word1"));
+        assert!(listed.trim_end_matches('.').rsplit(", ").next().unwrap().starts_with("word"));
+    }
 
     fn app(name: &str, bundle: &str) -> FocusTarget {
         FocusTarget {

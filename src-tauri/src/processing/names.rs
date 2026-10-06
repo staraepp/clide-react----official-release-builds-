@@ -71,14 +71,14 @@ pub fn apply_known_names(input: &str) -> String {
         .join("\n")
 }
 
-fn leading_punctuation(token: &str) -> &str {
+pub(super) fn leading_punctuation(token: &str) -> &str {
     let end = token
         .find(|c: char| c.is_alphanumeric())
         .unwrap_or(token.len());
     &token[..end]
 }
 
-fn trailing_punctuation(token: &str) -> &str {
+pub(super) fn trailing_punctuation(token: &str) -> &str {
     let start = token
         .rfind(|c: char| c.is_alphanumeric())
         .map_or(token.len(), |index| {

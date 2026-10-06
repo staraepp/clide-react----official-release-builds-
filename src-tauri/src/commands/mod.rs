@@ -5,6 +5,7 @@
 //! it can be tested without a webview.
 
 pub mod dictation;
+pub mod dictionary;
 pub mod history;
 pub mod models;
 pub mod permissions;

@@ -441,6 +441,21 @@ SQLite full-text search is preferred for normal history search.
 
 ---
 
+# Dictionary
+
+The dictionary (`database/dictionary.rs`, table `dictionary`) holds words, never
+transcripts. By user decision (2026-10-06) every word of a finished dictation is
+added automatically (`dictionaryAutoLearn`, on by default, dictation only, not
+API uploads), and the user can add words by hand.
+
+- Only **manual** words change behaviour: they respell matching text
+  (`processing/dictionary.rs`, case-insensitive, runs in `finish_text`) and are
+  appended to the Whisper prompt (`context::with_dictionary`). Learned words are
+  a passive record until the user keeps one.
+- It stays local, can be cleared, and must not store anything but words.
+
+---
+
 # Imports
 
 Imported audio/video and live dictation share one transcript/history system.

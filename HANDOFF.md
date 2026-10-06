@@ -13,13 +13,34 @@ https://clide.staraep.fun.
 Read `blueprint.md` (product truth) and `AGENTS.md` (engineering rules) first —
 this file only records *state of the build*, never product decisions.
 
-**Last updated:** 2026-10-05, v2.1.0: Local API (loopback HTTP: health, models, transcription, events).
+**Last updated:** 2026-10-06, v2.1.1: dictionary + audio-lowering switch.
 
 > Update this file at every milestone, not at the end of a session. The user
 > asked for this explicitly and repeatedly. A milestone is: a decision made, a
 > file group rewritten, a build passing or failing, a test run.
 
 ---
+
+# DICTIONARY + AUDIO-LOWERING SWITCH (2026-10-06, v2.1.1)
+
+- `lowerAudioWhileDictating` (default on, so existing installs are unchanged)
+  gates `session.duck_audio()` in `dictation/pipeline.rs::start`. The guard still
+  restores on every path. UI: Settings -> "Music and other audio".
+- Dictionary: schema v3 table `dictionary` (`database/dictionary.rs`), commands in
+  `commands/dictionary.rs`, event `dictionary:changed`, UI
+  `settings/DictionarySection.tsx` + `useDictionary.ts`. `persist()` calls
+  `learn_words` (setting `dictionaryAutoLearn`, default on). Manual words respell
+  text in `finish_text` (`processing/dictionary.rs`) and join the Whisper prompt
+  (`context::with_dictionary`, 300 chars). Learned words are passive; adding a
+  learned word (the pin button) makes it manual.
+- Verified: `cargo test` 321 passed, clippy `-D warnings` clean, `tsc` clean, UI
+  exercised in a browser against a mocked backend (light/dark, narrow).
+- Not verified: a real dictation teaching the dictionary, a manual word respelling
+  real output, Whisper honouring the extra prompt words, and the volume actually
+  staying put with the switch off. Live typing (Apple Speech) types text as it
+  arrives, so manual spellings are not applied there. Polish capitalises a
+  sentence-initial word, so an entry like "iPhone" starting a sentence becomes
+  "IPhone".
 
 # LOCAL API v1 (2026-10-05, v2.1.0)
 

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 
 /// Bumped whenever `apply` gains a step. `user_version` tracks what a database
 /// on disk has already had applied.
-const TARGET_VERSION: i64 = 2;
+const TARGET_VERSION: i64 = 3;
 
 pub fn apply(connection: &Connection) -> rusqlite::Result<()> {
     connection.pragma_update(None, "journal_mode", "WAL")?;
@@ -22,6 +22,10 @@ pub fn apply(connection: &Connection) -> rusqlite::Result<()> {
 
     if version < 2 {
         connection.execute_batch(V2)?;
+    }
+
+    if version < 3 {
+        connection.execute_batch(V3)?;
     }
 
     connection.pragma_update(None, "user_version", TARGET_VERSION)?;
@@ -116,6 +120,29 @@ ALTER TABLE provider_configs_v2 RENAME TO provider_configs;
 COMMIT;
 "#;
 
+// The dictionary: words the user added, and words learned from their
+// dictations. A word is stored once, whatever its case.
+const V3: &str = r#"
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS dictionary (
+    -- Lower case, straight apostrophes: what a word is looked up by.
+    key          TEXT    PRIMARY KEY NOT NULL,
+    -- How the word is written. For a manual entry, exactly as the user typed it.
+    word         TEXT    NOT NULL,
+    -- 'manual' or 'auto'. Only manual words change how text is spelled.
+    source       TEXT    NOT NULL,
+    uses         INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS dictionary_source_idx
+    ON dictionary (source, uses DESC);
+
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +186,33 @@ mod tests {
                 .unwrap(),
             TARGET_VERSION
         );
+    }
+
+    #[test]
+    fn v3_migration_adds_the_dictionary_and_keeps_history() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(V1).unwrap();
+        connection.execute_batch(V2).unwrap();
+        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection
+            .execute(
+                "INSERT INTO transcripts (id, text, created_at, source) VALUES ('a', 'kept', 1, 'dictation')",
+                [],
+            )
+            .unwrap();
+
+        apply(&connection).unwrap();
+
+        let kept: String = connection
+            .query_row("SELECT text FROM transcripts WHERE id = 'a'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kept, "kept");
+        connection
+            .execute(
+                "INSERT INTO dictionary (key, word, source, created_at, last_used_at)
+                 VALUES ('tauri', 'Tauri', 'manual', 1, 1)",
+                [],
+            )
+            .unwrap();
     }
 }

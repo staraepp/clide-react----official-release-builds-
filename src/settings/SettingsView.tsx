@@ -6,6 +6,7 @@ import { Button } from "@/components/Button";
 import { RefineSection } from "./RefineSection";
 import { AboutSection } from "./AboutSection";
 import { LocalApiSection } from "./LocalApiSection";
+import { DictionarySection } from "./DictionarySection";
 import * as commands from "@/lib/commands";
 import type { SystemStatus } from "@/lib/types";
 
@@ -106,6 +107,37 @@ export function SettingsView({
         <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
           {liveTypingNote(status)}
         </p>
+      </Section>
+
+      <Section
+        title="Music and other audio"
+        description="Music playing while you speak makes clide hear you worse. This turns the Mac's volume down while you record."
+      >
+        <label className="flex items-start gap-3">
+          <Toggle
+            checked={status.settings.lowerAudioWhileDictating}
+            label="Lower other audio while dictating"
+            onChange={async (next) => {
+              await commands.setLowerAudioWhileDictating(next);
+              refresh();
+            }}
+          />
+          <span className="text-[13px] leading-snug text-ink">
+            Lower other audio while dictating
+            <span className="mt-1 block text-[12px] text-ink-3">
+              {status.settings.lowerAudioWhileDictating
+                ? "The Mac's volume drops to a quarter while the microphone is open and is put back as soon as you stop. Nothing is paused."
+                : "Your music keeps playing at full volume while you speak."}
+            </span>
+          </span>
+        </label>
+      </Section>
+
+      <Section
+        title="Dictionary"
+        description="Words clide should spell your way: names, products, jargon. It also remembers the words you say."
+      >
+        <DictionarySection status={status} refresh={refresh} />
       </Section>
 
       <Section

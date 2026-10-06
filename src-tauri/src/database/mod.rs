@@ -1,5 +1,6 @@
 //! Local SQLite storage.
 
+pub mod dictionary;
 pub mod kv;
 pub mod providers;
 pub mod schema;

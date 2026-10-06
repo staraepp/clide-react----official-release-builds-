@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.1 - 2026-10-06
+
+### Added
+- Dictionary (Settings -> Dictionary): add words and phrases to spell your way,
+  and Clide learns every word you dictate. Your words respell matching text and
+  are hinted to Whisper; learned words are a record you can keep, remove or
+  clear. Learning can be switched off.
+- Settings -> Music and other audio: lowering the Mac's volume while you record
+  is now a switch.
+
 ## 2.1.0 - 2026-10-05
 
 ### Added

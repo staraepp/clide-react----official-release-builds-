@@ -61,6 +61,8 @@ export interface AppSettings {
   technicalVocabulary: TechnicalVocabulary;
   formatTechnicalTerms: boolean;
   liveTyping: boolean;
+  lowerAudioWhileDictating: boolean;
+  dictionaryAutoLearn: boolean;
   localApiEnabled: boolean;
   localApiPort: number;
   localApiAllowedOrigins: string[];
@@ -74,6 +76,29 @@ export interface AppSettings {
   language: string | null;
   visualIntensity: VisualIntensity;
   onboardingComplete: boolean;
+}
+
+export type WordSource = "manual" | "auto";
+
+export interface DictionaryEntry {
+  word: string;
+  source: WordSource;
+  /** Times it has been dictated. */
+  uses: number;
+  createdAt: number;
+  lastUsedAt: number;
+}
+
+export interface DictionaryQuery {
+  search?: string;
+  source?: WordSource;
+  limit?: number;
+}
+
+export interface DictionaryPage {
+  entries: DictionaryEntry[];
+  /** Over the whole dictionary, not just the entries returned. */
+  counts: { manual: number; learned: number };
 }
 
 export interface SystemStatus {
